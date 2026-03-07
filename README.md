@@ -48,8 +48,8 @@ graph TB
         end
 
         subgraph "Outbound Adapters"
-            PORTS["Ports (interfaces)<br/>BinRepository<br/>RequestRepository<br/>EventPublisher"]
-            SQLITE["SQLite WAL<br/>implements BinRepository<br/>implements RequestRepository"]
+            PORTS["Ports (interfaces)<br/>Repository<br/>EventPublisher"]
+            SQLITE["SQLite WAL<br/>implements Repository"]
             HUB["SSE Hub<br/>implements EventPublisher"]
             OTEL["OTel Tracer<br/>OTLP exporter"]
         end
