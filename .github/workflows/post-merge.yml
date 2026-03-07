@@ -71,3 +71,10 @@ jobs:
             sudo chmod +x /opt/gofer/gofer && \
             sudo systemctl start gofer && \
             echo 'Deploy complete.'"
+
+      - name: Verify deploy
+        env:
+          SSH_TARGET: ${{ secrets.DO_USERNAME }}@${{ secrets.DO_HOST }}
+        run: |
+          sleep 3
+          ssh -o StrictHostKeyChecking=no ${SSH_TARGET} "curl -sf http://localhost:8080/healthz"
