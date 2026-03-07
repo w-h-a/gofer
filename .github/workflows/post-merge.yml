@@ -1,0 +1,73 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  semver_tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      new_tag: ${{ steps.tagger.outputs.next }}
+      is_released: ${{ steps.tagger.outputs.next != steps.tagger.outputs.current }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - id: tagger
+        uses: ietf-tools/semver-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          noVersionBumpBehavior: current
+
+      - if: steps.tagger.outputs.next != steps.tagger.outputs.current
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tagger.outputs.next }}
+          generate_release_notes: true
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [semver_tag]
+    if: needs.semver_tag.outputs.is_released == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build linux binary
+        run: GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o gofer ./cmd/gofer
+
+      - name: Install SSH key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.DO_SSH_KEY }}
+          known_hosts: ${{ secrets.DO_HOST }}
+
+      - name: Deploy binary
+        env:
+          SSH_TARGET: ${{ secrets.DO_USERNAME }}@${{ secrets.DO_HOST }}
+        run: |
+          scp -o StrictHostKeyChecking=no gofer ${SSH_TARGET}:/tmp/gofer
+          ssh -o StrictHostKeyChecking=no ${SSH_TARGET} "\
+            sudo tee /etc/gofer/env > /dev/null <<'ENVEOF'
+          OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io
+          OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=${{ secrets.HONEYCOMB_API_KEY }}
+          OTEL_SERVICE_NAME=gofer
+          ENVEOF
+            sudo chmod 600 /etc/gofer/env && \
+            sudo systemctl stop gofer 2>/dev/null || true && \
+            sudo mv /tmp/gofer /opt/gofer/gofer && \
+            sudo chmod +x /opt/gofer/gofer && \
+            sudo systemctl start gofer && \
+            echo 'Deploy complete.'"
