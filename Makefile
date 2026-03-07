@@ -6,18 +6,15 @@ tidy:
 style:
 	goimports -l -w ./
 
-.PHONY: test
-test: unit-test integration-test
+.PHONY: test                                                                                                                                                          
+test:                                                                                                                                                                 
+	@echo "=== TESTS ==="
+	go clean -testcache && INTEGRATION=1 go test -v ./...
 
 .PHONY: unit-test
 unit-test:
-	@echo "=== UNIT TESTS ==="                                                                             
+	@echo "=== UNIT TESTS ==="
 	go clean -testcache && go test -v ./...
-
-.PHONY: integration-test
-integration-test:
-	@echo "=== INTEGRATION TESTS ==="
-	go clean -testcache && INTEGRATION=1 go test -v ./...
 
 .PHONY: go-build
 go-build:
