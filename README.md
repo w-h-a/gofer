@@ -39,11 +39,11 @@ graph TB
             HEALTH["GET /healthz"]
         end
 
-        subgraph "Application Layer"
+        subgraph "Service Layer"
             UC["Use Cases<br/>CreateBin / CaptureRequest<br/>ViewBin / ViewRequest<br/>CleanupExpiredBins"]
         end
 
-        subgraph "Domain Layer (pure — zero infrastructure imports)"
+        subgraph "Domain Layer"
             ENT["Entities: Bin, CapturedRequest<br/>Value Objects: Slug, RawPayload<br/>Logic: IsExpired, NewSlug, Validate"]
         end
 
