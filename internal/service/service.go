@@ -93,6 +93,48 @@ func (s *Service) CaptureRequest(ctx context.Context, in CaptureRequestInput) (C
 	}, nil
 }
 
+func (s *Service) ViewBin(ctx context.Context, in ViewBinInput) (ViewBinOutput, error) {
+	slug, err := domain.ParseSlug(in.Slug)
+	if err != nil {
+		return ViewBinOutput{}, fmt.Errorf("failed to parse slug: %w", err)
+	}
+
+	bin, err := s.repo.FindBinBySlug(ctx, slug)
+	if err != nil {
+		return ViewBinOutput{}, fmt.Errorf("failed to find bin: %w", err)
+	}
+
+	if bin.IsExpired(time.Now()) {
+		return ViewBinOutput{}, ErrBinExpired
+	}
+
+	reqs, err := s.repo.FindCapturedRequestByBinID(ctx, bin.ID())
+	if err != nil {
+		return ViewBinOutput{}, fmt.Errorf("failed to find captured requests: %w", err)
+	}
+
+	summaries := make([]CapturedRequestSummary, len(reqs))
+	for i, r := range reqs {
+		summaries[i] = CapturedRequestSummary{
+			ID:          r.ID(),
+			SequenceNum: r.SequenceNum(),
+			Method:      r.Method(),
+			Path:        r.Path(),
+			ContentType: r.ContentType(),
+			BodySize:    r.BodySize(),
+			CapturedAt:  r.CapturedAt(),
+		}
+	}
+
+	return ViewBinOutput{
+		ID:        bin.ID(),
+		Slug:      bin.Slug().String(),
+		CreatedAt: bin.CreatedAt(),
+		ExpiresAt: bin.ExpiresAt(),
+		Requests:  summaries,
+	}, nil
+}
+
 func NewService(r repo.Repo, p eventpublisher.EventPublisher) *Service {
 	return &Service{repo: r, pub: p}
 }
