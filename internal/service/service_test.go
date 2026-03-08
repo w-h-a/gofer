@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	mockeventpublisher "github.com/w-h-a/gofer/internal/client/event_publisher/mock"
+	"github.com/w-h-a/gofer/internal/client/repo"
 	mockrepo "github.com/w-h-a/gofer/internal/client/repo/mock"
 	"github.com/w-h-a/gofer/internal/domain"
 )
@@ -42,6 +43,94 @@ func TestCreateBin_RepoError(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "save bin")
+}
+
+func TestCaptureRequest_OrchestrationOrder(t *testing.T) {
+	// Arrange
+	bin := activeBin()
+	saved := sampleCapturedRequest(bin.ID())
+	r := mockrepo.NewRepo(
+		mockrepo.WithFindBinResult(bin),
+		mockrepo.WithSaveCapturedResult(saved),
+	)
+	p := mockeventpublisher.NewEventPublisher()
+	svc := NewService(r, p)
+
+	// Act
+	out, err := svc.CaptureRequest(context.Background(), CaptureRequestInput{
+		Slug:   bin.Slug().String(),
+		Method: "POST",
+		Path:   "/webhook",
+		Body:   []byte(`{"key":"val"}`),
+	})
+
+	// Assert
+	require.NoError(t, err)
+	require.Equal(t, saved.ID(), out.ID)
+	require.Equal(t, []string{"FindBinBySlug", "SaveCapturedRequest"}, r.Calls())
+	require.Equal(t, []string{"Publish"}, p.Calls())
+}
+
+func TestCaptureRequest_BinNotFound(t *testing.T) {
+	// Arrange
+	r := mockrepo.NewRepo(mockrepo.WithFindBinErr(repo.ErrNotFound))
+	p := mockeventpublisher.NewEventPublisher()
+	svc := NewService(r, p)
+
+	// Act
+	_, err := svc.CaptureRequest(context.Background(), CaptureRequestInput{
+		Slug:   "abcd1234",
+		Method: "POST",
+		Path:   "/webhook",
+	})
+
+	// Assert
+	require.ErrorIs(t, err, repo.ErrNotFound)
+	require.Equal(t, []string{"FindBinBySlug"}, r.Calls())
+	require.Equal(t, []string{}, p.Calls())
+}
+
+func TestCaptureRequest_BinExpired(t *testing.T) {
+	// Arrange
+	r := mockrepo.NewRepo(mockrepo.WithFindBinResult(expiredBin()))
+	p := mockeventpublisher.NewEventPublisher()
+	svc := NewService(r, p)
+
+	// Act
+	_, err := svc.CaptureRequest(context.Background(), CaptureRequestInput{
+		Slug:   "abcd1234",
+		Method: "POST",
+		Path:   "/webhook",
+	})
+
+	// Assert
+	require.ErrorIs(t, err, ErrBinExpired)
+	require.Equal(t, []string{"FindBinBySlug"}, r.Calls())
+	require.Equal(t, []string{}, p.Calls())
+}
+
+func TestCaptureRequest_SaveError_NoPublish(t *testing.T) {
+	// Arrange
+	bin := activeBin()
+	r := mockrepo.NewRepo(
+		mockrepo.WithFindBinResult(bin),
+		mockrepo.WithSaveCapturedErr(errors.New("write failed")),
+	)
+	p := mockeventpublisher.NewEventPublisher()
+	svc := NewService(r, p)
+
+	// Act
+	_, err := svc.CaptureRequest(context.Background(), CaptureRequestInput{
+		Slug:   bin.Slug().String(),
+		Method: "POST",
+		Path:   "/webhook",
+	})
+
+	// Assert
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "save captured request")
+	require.Equal(t, []string{"FindBinBySlug", "SaveCapturedRequest"}, r.Calls())
+	require.Equal(t, []string{}, p.Calls())
 }
 
 func activeBin() domain.Bin {
