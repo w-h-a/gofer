@@ -133,6 +133,61 @@ func TestCaptureRequest_SaveError_NoPublish(t *testing.T) {
 	require.Equal(t, []string{}, p.Calls())
 }
 
+func TestViewBin_Success(t *testing.T) {
+	// Arrange
+	bin := activeBin()
+	reqs := []domain.CapturedRequest{sampleCapturedRequest(bin.ID())}
+	r := mockrepo.NewRepo(
+		mockrepo.WithFindBinResult(bin),
+		mockrepo.WithFindByBinIDResult(reqs),
+	)
+	p := mockeventpublisher.NewEventPublisher()
+	svc := NewService(r, p)
+
+	// Act
+	out, err := svc.ViewBin(context.Background(), ViewBinInput{Slug: bin.Slug().String()})
+
+	// Assert
+	require.NoError(t, err)
+	require.Equal(t, bin.ID(), out.ID)
+	require.Equal(t, bin.Slug().String(), out.Slug)
+	require.Len(t, out.Requests, 1)
+	require.Equal(t, []string{"FindBinBySlug", "FindCapturedRequestByBinID"}, r.Calls())
+}
+
+func TestViewBin_Expired(t *testing.T) {
+	// Arrange
+	r := mockrepo.NewRepo(mockrepo.WithFindBinResult(expiredBin()))
+	p := mockeventpublisher.NewEventPublisher()
+	svc := NewService(r, p)
+
+	// Act
+	_, err := svc.ViewBin(context.Background(), ViewBinInput{Slug: "abcd1234"})
+
+	// Assert
+	require.ErrorIs(t, err, ErrBinExpired)
+	require.Equal(t, []string{"FindBinBySlug"}, r.Calls())
+}
+
+func TestViewBin_FindRequestsError(t *testing.T) {
+	// Arrange
+	bin := activeBin()
+	r := mockrepo.NewRepo(
+		mockrepo.WithFindBinResult(bin),
+		mockrepo.WithFindByBinIDErr(errors.New("db read failed")),
+	)
+	p := mockeventpublisher.NewEventPublisher()
+	svc := NewService(r, p)
+
+	// Act
+	_, err := svc.ViewBin(context.Background(), ViewBinInput{Slug: bin.Slug().String()})
+
+	// Assert
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "find captured requests")
+	require.Equal(t, []string{"FindBinBySlug", "FindCapturedRequestByBinID"}, r.Calls())
+}
+
 func activeBin() domain.Bin {
 	slug, _ := domain.ParseSlug("abcd1234")
 	return domain.RehydrateBin(
