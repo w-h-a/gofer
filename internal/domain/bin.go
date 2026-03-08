@@ -71,6 +71,10 @@ const (
 	slugLength   = 8
 )
 
+var (
+	ErrInvalidSlug = errors.New("invalid slug")
+)
+
 type Slug string
 
 func (s Slug) String() string {
@@ -93,12 +97,12 @@ func NewSlug() (Slug, error) {
 
 func ParseSlug(s string) (Slug, error) {
 	if len(s) != slugLength {
-		return "", fmt.Errorf("slug must be %d characters, got %d", slugLength, len(s))
+		return "", fmt.Errorf("%w: must be %d characters, got %d", ErrInvalidSlug, slugLength, len(s))
 	}
 
 	for _, c := range s {
 		if !strings.ContainsRune(slugAlphabet, c) {
-			return "", fmt.Errorf("slug contains invalid characters: %c", c)
+			return "", fmt.Errorf("%w: contains invalid characters: %c", ErrInvalidSlug, c)
 		}
 	}
 

@@ -52,8 +52,8 @@ func TestParseSlug_RejectsWrongLength(t *testing.T) {
 	_, err := domain.ParseSlug("short")
 
 	// Assert
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "8 characters")
+	require.ErrorIs(t, err, domain.ErrInvalidSlug)
+	require.ErrorContains(t, err, "8 characters")
 }
 
 func TestParseSlug_RejectsInvalidCharacters(t *testing.T) {
@@ -61,8 +61,8 @@ func TestParseSlug_RejectsInvalidCharacters(t *testing.T) {
 	_, err := domain.ParseSlug("abc-1234")
 
 	// Assert
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "invalid character")
+	require.ErrorIs(t, err, domain.ErrInvalidSlug)
+	require.ErrorContains(t, err, "invalid character")
 }
 
 func TestNewBin_Success(t *testing.T) {
