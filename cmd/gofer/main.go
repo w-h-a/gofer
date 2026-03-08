@@ -8,18 +8,40 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/w-h-a/gofer/internal/client/event_publisher/sse"
+	"github.com/w-h-a/gofer/internal/client/repo"
+	"github.com/w-h-a/gofer/internal/client/repo/sqlite"
+	"github.com/w-h-a/gofer/internal/service"
 )
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", handleHealthz)
+	repoLocation := os.Getenv("REPO_LOCATION")
+	if repoLocation == "" {
+		repoLocation = "gofer.db"
+	}
+
+	r, err := sqlite.NewRepo(repo.WithLocation(repoLocation))
+	if err != nil {
+		slog.Error("failed to create repo", "error", err)
+		os.Exit(1)
+	}
+
+	p, err := sse.NewEventPublisher()
+	if err != nil {
+		slog.Error("failed to create event publisher", "error", err)
+		os.Exit(1)
+	}
+
+	svc := service.NewService(r, p)
+	h := newHandler(svc)
 
 	srv := &http.Server{
 		Addr:    ":8080",
-		Handler: mux,
+		Handler: h.routes(),
 	}
 
 	go func() {

@@ -21,7 +21,7 @@ func TestCreateBin_Success(t *testing.T) {
 
 	// Act
 	out, err := svc.CreateBin(context.Background(), CreateBinInput{TTL: 48 * time.Hour})
-	
+
 	// Assert
 	require.NoError(t, err)
 	require.NotEqual(t, uuid.Nil, out.ID)
