@@ -60,7 +60,7 @@ func (p *sseEventPublisher) Unsubscribe(ctx context.Context, binID uuid.UUID, ch
 	return nil
 }
 
-func NewEventPublisher(opts ...eventpublisher.Option) eventpublisher.EventPublisher {
+func NewEventPublisher(opts ...eventpublisher.Option) (eventpublisher.EventPublisher, error) {
 	options := eventpublisher.NewOptions(opts...)
 
 	p := &sseEventPublisher{
@@ -69,5 +69,5 @@ func NewEventPublisher(opts ...eventpublisher.Option) eventpublisher.EventPublis
 		subscribers: map[uuid.UUID][]chan domain.CapturedRequest{},
 	}
 
-	return p
+	return p, nil
 }

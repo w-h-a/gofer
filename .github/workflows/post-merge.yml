@@ -61,6 +61,7 @@ jobs:
           scp -o StrictHostKeyChecking=no gofer ${SSH_TARGET}:/tmp/gofer
           ssh -o StrictHostKeyChecking=no ${SSH_TARGET} "\
             sudo tee /etc/gofer/env > /dev/null <<'ENVEOF'
+          REPO_LOCATION=/opt/gofer/gofer.db
           OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io
           OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=${{ secrets.HONEYCOMB_API_KEY }}
           OTEL_SERVICE_NAME=gofer
