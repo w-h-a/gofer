@@ -33,7 +33,7 @@ graph TB
 
         subgraph "Inbound Adapters"
             WEB_UI["Web UI Handlers<br/>GET / — home<br/>GET /bins/:slug — inspection"]
-            API["API Handlers<br/>POST /api/bins<br/>GET /api/bins/:slug"]
+            API["API Handlers<br/>POST /api/bins<br/>GET /api/bins/:slug<br/>GET /api/requests/:id"]
             CAPTURE["Capture Handler<br/>ANY /gofer/:slug/*"]
             SSE_EP["SSE Endpoint<br/>GET /sse/:slug"]
             HEALTH["GET /healthz"]
