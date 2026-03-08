@@ -250,6 +250,114 @@ func TestCaptureRequest_Success(t *testing.T) {
 	require.NotEmpty(t, captured.CapturedAt)
 }
 
+func TestViewBin_NotFound(t *testing.T) {
+	if os.Getenv("INTEGRATION") == "" {
+		t.Skip("skipping integration test")
+	}
+
+	// Arrange
+	ts := newTestServer(t)
+
+	// Act
+	rsp, err := ts.Client().Get(ts.URL + "/api/bins/zzzzzzzz")
+	require.NoError(t, err)
+	defer rsp.Body.Close()
+
+	// Assert
+	require.Equal(t, http.StatusNotFound, rsp.StatusCode)
+
+	var body errorResponse
+	require.NoError(t, json.NewDecoder(rsp.Body).Decode(&body))
+	require.Equal(t, "bin not found", body.Error)
+}
+
+func TestViewBin_Expired(t *testing.T) {
+	if os.Getenv("INTEGRATION") == "" {
+		t.Skip("skipping integration test")
+	}
+
+	// Arrange
+	ts := newTestServer(t)
+
+	rsp, err := ts.Client().Post(
+		ts.URL+"/api/bins",
+		"application/json",
+		strings.NewReader(`{"ttl":"1ms"}`),
+	)
+	require.NoError(t, err)
+	defer rsp.Body.Close()
+	require.Equal(t, http.StatusCreated, rsp.StatusCode)
+
+	var bin createBinResponse
+	require.NoError(t, json.NewDecoder(rsp.Body).Decode(&bin))
+
+	// Wait for expiry
+	time.Sleep(5 * time.Millisecond)
+
+	// Act
+	rsp2, err := ts.Client().Get(ts.URL + "/api/bins/" + bin.Slug)
+	require.NoError(t, err)
+	defer rsp2.Body.Close()
+
+	// Assert
+	require.Equal(t, http.StatusGone, rsp2.StatusCode)
+
+	var errBody errorResponse
+	require.NoError(t, json.NewDecoder(rsp2.Body).Decode(&errBody))
+	require.Equal(t, "bin is expired", errBody.Error)
+}
+
+func TestViewBin_OK(t *testing.T) {
+	if os.Getenv("INTEGRATION") == "" {
+		t.Skip("skipping integration test")
+	}
+
+	// Arrange
+	ts := newTestServer(t)
+
+	rsp, err := ts.Client().Post(
+		ts.URL+"/api/bins",
+		"application/json",
+		strings.NewReader(`{"ttl":"1h"}`),
+	)
+	require.NoError(t, err)
+	defer rsp.Body.Close()
+	require.Equal(t, http.StatusCreated, rsp.StatusCode)
+
+	var bin createBinResponse
+	require.NoError(t, json.NewDecoder(rsp.Body).Decode(&bin))
+
+	// Capture a request so the list isn't empty
+	rsp2, err := ts.Client().Post(
+		ts.URL+"/gofer/"+bin.Slug+"/webhook",
+		"application/json",
+		strings.NewReader(`{"key":"val"}`),
+	)
+	require.NoError(t, err)
+	defer rsp2.Body.Close()
+	require.Equal(t, http.StatusOK, rsp2.StatusCode)
+
+	// Act
+	rsp3, err := ts.Client().Get(ts.URL + "/api/bins/" + bin.Slug)
+	require.NoError(t, err)
+	defer rsp3.Body.Close()
+
+	// Assert
+	require.Equal(t, http.StatusOK, rsp3.StatusCode)
+	require.Equal(t, "application/json", rsp3.Header.Get("Content-Type"))
+
+	var viewed viewBinResponse
+	require.NoError(t, json.NewDecoder(rsp3.Body).Decode(&viewed))
+	require.Equal(t, bin.ID, viewed.ID)
+	require.Equal(t, bin.Slug, viewed.Slug)
+	require.Equal(t, bin.CreatedAt, viewed.CreatedAt)
+	require.Equal(t, bin.ExpiresAt, viewed.ExpiresAt)
+	require.Len(t, viewed.Requests, 1)
+	require.Equal(t, 1, viewed.Requests[0].SequenceNum)
+	require.Equal(t, "POST", viewed.Requests[0].Method)
+	require.Equal(t, "/webhook", viewed.Requests[0].Path)
+}
+
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
