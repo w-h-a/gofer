@@ -15,6 +15,7 @@ func (h *handler) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.handleHealthz)
 	mux.HandleFunc("POST /api/bins", h.handleCreateBin)
+	mux.HandleFunc("/gofer/{slug}/{path...}", h.handleCaptureRequest)
 	return mux
 }
 
