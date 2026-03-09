@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	eventpublisher "github.com/w-h-a/gofer/internal/client/event_publisher"
 	"github.com/w-h-a/gofer/internal/client/repo"
 	"github.com/w-h-a/gofer/internal/domain"
@@ -132,6 +133,33 @@ func (s *Service) ViewBin(ctx context.Context, in ViewBinInput) (ViewBinOutput, 
 		CreatedAt: bin.CreatedAt(),
 		ExpiresAt: bin.ExpiresAt(),
 		Requests:  summaries,
+	}, nil
+}
+
+func (s *Service) ViewCapturedRequest(ctx context.Context, in ViewCapturedRequestInput) (ViewCapturedRequestOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return ViewCapturedRequestOutput{}, fmt.Errorf("failed to parse request id: %w", err)
+	}
+
+	req, err := s.repo.FindCapturedRequestByID(ctx, id)
+	if err != nil {
+		return ViewCapturedRequestOutput{}, fmt.Errorf("failed to find captured request: %w", err)
+	}
+
+	return ViewCapturedRequestOutput{
+		ID:          req.ID(),
+		BinID:       req.BinID(),
+		SequenceNum: req.SequenceNum(),
+		Method:      req.Method(),
+		Path:        req.Path(),
+		Headers:     req.Headers(),
+		QueryParams: req.QueryParams(),
+		ContentType: req.ContentType(),
+		RemoteAddr:  req.RemoteAddr(),
+		BodySize:    req.BodySize(),
+		CapturedAt:  req.CapturedAt(),
+		Body:        req.RawPayload().Bytes(),
 	}, nil
 }
 

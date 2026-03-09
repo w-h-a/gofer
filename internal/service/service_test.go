@@ -188,6 +188,37 @@ func TestViewBin_FindRequestsError(t *testing.T) {
 	require.Equal(t, []string{"FindBinBySlug", "FindCapturedRequestByBinID"}, r.Calls())
 }
 
+func TestViewCapturedRequest_Success(t *testing.T) {
+	// Arrange
+	req := sampleCapturedRequest(uuid.New())
+	r := mockrepo.NewRepo(mockrepo.WithFindByIDResult(req))
+	p := mockeventpublisher.NewEventPublisher()
+	svc := NewService(r, p)
+
+	// Act
+	out, err := svc.ViewCapturedRequest(context.Background(), ViewCapturedRequestInput{ID: req.ID().String()})
+
+	// Assert
+	require.NoError(t, err)
+	require.Equal(t, req.ID(), out.ID)
+	require.Equal(t, req.Method(), out.Method)
+	require.Equal(t, []string{"FindCapturedRequestByID"}, r.Calls())
+}
+
+func TestViewCapturedRequest_NotFound(t *testing.T) {
+	// Arrange
+	r := mockrepo.NewRepo(mockrepo.WithFindByIDErr(repo.ErrNotFound))
+	p := mockeventpublisher.NewEventPublisher()
+	svc := NewService(r, p)
+
+	// Act
+	_, err := svc.ViewCapturedRequest(context.Background(), ViewCapturedRequestInput{ID: uuid.New().String()})
+
+	// Assert
+	require.ErrorIs(t, err, repo.ErrNotFound)
+	require.Equal(t, []string{"FindCapturedRequestByID"}, r.Calls())
+}
+
 func activeBin() domain.Bin {
 	slug, _ := domain.ParseSlug("abcd1234")
 	return domain.RehydrateBin(
