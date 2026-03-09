@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/w-h-a/gofer/internal/service"
@@ -16,20 +15,11 @@ func (h *handler) routes() http.Handler {
 	mux.HandleFunc("GET /healthz", h.handleHealthz)
 	mux.HandleFunc("POST /api/bins", h.handleCreateBin)
 	mux.HandleFunc("GET /api/bins/{slug}", h.handleViewBin)
+	mux.HandleFunc("GET /api/requests/{id}", h.handleViewCapturedRequest)
 	mux.HandleFunc("/gofer/{slug}/{path...}", h.handleCaptureRequest)
 	return mux
 }
 
 func newHandler(svc *service.Service) *handler {
 	return &handler{svc: svc}
-}
-
-type errorResponse struct {
-	Error string `json:"error"`
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
 }

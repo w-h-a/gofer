@@ -404,6 +404,99 @@ func TestViewBin_InvalidSlug(t *testing.T) {
 	require.Equal(t, "invalid slug", body.Error)
 }
 
+func TestViewCapturedRequest_Success(t *testing.T) {
+	if os.Getenv("INTEGRATION") == "" {
+		t.Skip("set INTEGRATION to run")
+	}
+
+	// Arrange
+	ts := newTestServer(t)
+
+	resp, err := http.Post(ts.URL+"/api/bins", "application/json", strings.NewReader(`{"ttl":"1h"}`))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	var bin createBinResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&bin))
+
+	body := `{"hello":"world"}`
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/gofer/"+bin.Slug+"/webhook", strings.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Custom", "test-value")
+
+	resp, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var captured captureRequestResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&captured))
+
+	// Act
+	resp, err = http.Get(ts.URL + "/api/requests/" + captured.ID)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	// Assert
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var result viewCapturedRequestResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
+	require.Equal(t, captured.ID, result.ID)
+	require.Equal(t, captured.BinID, result.BinID)
+	require.Equal(t, 1, result.SequenceNum)
+	require.Equal(t, "POST", result.Method)
+	require.Equal(t, "/webhook", result.Path)
+	require.Equal(t, "application/json", result.ContentType)
+	require.Equal(t, len(body), result.BodySize)
+	require.Equal(t, body, result.Body)
+	require.Contains(t, result.Headers["X-Custom"], "test-value")
+}
+
+func TestViewCapturedRequest_InvalidID(t *testing.T) {
+	if os.Getenv("INTEGRATION") == "" {
+		t.Skip("set INTEGRATION to run")
+	}
+
+	// Arrange
+	ts := newTestServer(t)
+
+	// Act
+	resp, err := http.Get(ts.URL + "/api/requests/not-a-uuid")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	// Assert
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+	var errResp errorResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&errResp))
+	require.Equal(t, "invalid request id", errResp.Error)
+}
+
+func TestViewCapturedRequest_NotFound(t *testing.T) {
+	if os.Getenv("INTEGRATION") == "" {
+		t.Skip("set INTEGRATION to run")
+	}
+
+	// Arrange
+	ts := newTestServer(t)
+
+	// Act
+	resp, err := http.Get(ts.URL + "/api/requests/00000000-0000-0000-0000-000000000000")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	// Assert
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+
+	var errResp errorResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&errResp))
+	require.Equal(t, "request not found", errResp.Error)
+}
+
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
