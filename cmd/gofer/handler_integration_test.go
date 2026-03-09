@@ -234,7 +234,7 @@ func TestCaptureRequest_Success(t *testing.T) {
 	defer rsp2.Body.Close()
 
 	// Assert
-	require.Equal(t, http.StatusOK, rsp2.StatusCode)
+	require.Equal(t, http.StatusCreated, rsp2.StatusCode)
 	require.Equal(t, "application/json", rsp2.Header.Get("Content-Type"))
 
 	var captured captureRequestResponse
@@ -360,7 +360,7 @@ func TestViewBin_OK(t *testing.T) {
 	)
 	require.NoError(t, err)
 	defer rsp2.Body.Close()
-	require.Equal(t, http.StatusOK, rsp2.StatusCode)
+	require.Equal(t, http.StatusCreated, rsp2.StatusCode)
 
 	// Act
 	rsp3, err := ts.Client().Get(ts.URL + "/api/bins/" + bin.Slug)
@@ -429,7 +429,7 @@ func TestViewCapturedRequest_Success(t *testing.T) {
 	resp, err = http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
 
 	var captured captureRequestResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&captured))
