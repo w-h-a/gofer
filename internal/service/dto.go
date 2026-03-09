@@ -61,11 +61,11 @@ type CapturedRequestSummary struct {
 	CapturedAt  time.Time
 }
 
-type ViewRequestInput struct {
+type ViewCapturedRequestInput struct {
 	ID string
 }
 
-type ViewRequestOutput struct {
+type ViewCapturedRequestOutput struct {
 	ID          uuid.UUID
 	BinID       uuid.UUID
 	SequenceNum int
