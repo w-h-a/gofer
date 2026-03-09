@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/w-h-a/gofer/internal/client/repo"
+	"github.com/w-h-a/gofer/internal/domain"
 	"github.com/w-h-a/gofer/internal/service"
 )
 
@@ -36,6 +37,8 @@ func (h *handler) handleViewBin(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		switch {
+		case errors.Is(err, domain.ErrInvalidSlug):
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "invalid slug"})
 		case errors.Is(err, repo.ErrNotFound):
 			writeJSON(w, http.StatusNotFound, errorResponse{Error: "bin not found"})
 		case errors.Is(err, service.ErrBinExpired):
