@@ -250,6 +250,31 @@ func TestCaptureRequest_Success(t *testing.T) {
 	require.NotEmpty(t, captured.CapturedAt)
 }
 
+func TestCaptureRequest_InvalidSlug(t *testing.T) {
+	if os.Getenv("INTEGRATION") == "" {
+		t.Skip("skipping integration test")
+	}
+
+	// Arrange
+	ts := newTestServer(t)
+
+	// Act
+	rsp, err := ts.Client().Post(
+		ts.URL+"/gofer/x/webhook",
+		"application/json",
+		strings.NewReader(`{"key":"val"}`),
+	)
+	require.NoError(t, err)
+	defer rsp.Body.Close()
+
+	// Assert
+	require.Equal(t, http.StatusBadRequest, rsp.StatusCode)
+
+	var body errorResponse
+	require.NoError(t, json.NewDecoder(rsp.Body).Decode(&body))
+	require.Equal(t, "invalid slug", body.Error)
+}
+
 func TestViewBin_NotFound(t *testing.T) {
 	if os.Getenv("INTEGRATION") == "" {
 		t.Skip("skipping integration test")
@@ -356,6 +381,27 @@ func TestViewBin_OK(t *testing.T) {
 	require.Equal(t, 1, viewed.Requests[0].SequenceNum)
 	require.Equal(t, "POST", viewed.Requests[0].Method)
 	require.Equal(t, "/webhook", viewed.Requests[0].Path)
+}
+
+func TestViewBin_InvalidSlug(t *testing.T) {
+	if os.Getenv("INTEGRATION") == "" {
+		t.Skip("skipping integration test")
+	}
+
+	// Arrange
+	ts := newTestServer(t)
+
+	// Act
+	rsp, err := ts.Client().Get(ts.URL + "/api/bins/x")
+	require.NoError(t, err)
+	defer rsp.Body.Close()
+
+	// Assert
+	require.Equal(t, http.StatusBadRequest, rsp.StatusCode)
+
+	var body errorResponse
+	require.NoError(t, json.NewDecoder(rsp.Body).Decode(&body))
+	require.Equal(t, "invalid slug", body.Error)
 }
 
 func newTestServer(t *testing.T) *httptest.Server {
