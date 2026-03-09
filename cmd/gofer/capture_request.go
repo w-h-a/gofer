@@ -69,7 +69,7 @@ func (h *handler) handleCaptureRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, captureRequestResponse{
+	writeJSON(w, http.StatusCreated, captureRequestResponse{
 		ID:          out.ID.String(),
 		BinID:       out.BinID.String(),
 		SequenceNum: out.SequenceNum,
