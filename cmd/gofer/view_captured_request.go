@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/w-h-a/gofer/internal/client/repo"
+	"github.com/w-h-a/gofer/internal/domain"
 	"github.com/w-h-a/gofer/internal/service"
 )
 
@@ -29,16 +29,13 @@ type viewCapturedRequestResponse struct {
 func (h *handler) handleViewCapturedRequest(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	if _, err := uuid.Parse(id); err != nil {
-		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "invalid request id"})
-		return
-	}
-
 	out, err := h.svc.ViewCapturedRequest(r.Context(), service.ViewCapturedRequestInput{
 		ID: id,
 	})
 	if err != nil {
 		switch {
+		case errors.Is(err, domain.ErrInvalidID):
+			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "invalid request id"})
 		case errors.Is(err, repo.ErrNotFound):
 			writeJSON(w, http.StatusNotFound, errorResponse{Error: "request not found"})
 		default:
