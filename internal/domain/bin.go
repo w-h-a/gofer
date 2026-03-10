@@ -73,6 +73,7 @@ const (
 
 var (
 	ErrInvalidSlug = errors.New("invalid slug")
+	ErrInvalidID   = errors.New("invalid id")
 )
 
 type Slug string
@@ -107,4 +108,13 @@ func ParseSlug(s string) (Slug, error) {
 	}
 
 	return Slug(s), nil
+}
+
+func ParseID(s string) (uuid.UUID, error) {
+	id, err := uuid.Parse(s)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("%w: %s", ErrInvalidID, err)
+	}
+
+	return id, nil
 }

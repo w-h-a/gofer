@@ -65,6 +65,34 @@ func TestParseSlug_RejectsInvalidCharacters(t *testing.T) {
 	require.ErrorContains(t, err, "invalid character")
 }
 
+func TestParseID_Valid(t *testing.T) {
+	// Arrange
+	expected := uuid.New()
+
+	// Act
+	id, err := domain.ParseID(expected.String())
+
+	// Assert
+	require.NoError(t, err)
+	require.Equal(t, expected, id)
+}
+
+func TestParseID_RejectsInvalidString(t *testing.T) {
+	// Act
+	_, err := domain.ParseID("not-a-uuid")
+
+	// Assert
+	require.ErrorIs(t, err, domain.ErrInvalidID)
+}
+
+func TestParseID_RejectsEmptyString(t *testing.T) {
+	// Act
+	_, err := domain.ParseID("")
+
+	// Assert
+	require.ErrorIs(t, err, domain.ErrInvalidID)
+}
+
 func TestNewBin_Success(t *testing.T) {
 	// Arrange
 	slug, err := domain.NewSlug()
