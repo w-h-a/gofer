@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	eventpublisher "github.com/w-h-a/gofer/internal/client/event_publisher"
 	"github.com/w-h-a/gofer/internal/client/repo"
 	"github.com/w-h-a/gofer/internal/domain"
@@ -137,7 +136,7 @@ func (s *Service) ViewBin(ctx context.Context, in ViewBinInput) (ViewBinOutput, 
 }
 
 func (s *Service) ViewCapturedRequest(ctx context.Context, in ViewCapturedRequestInput) (ViewCapturedRequestOutput, error) {
-	id, err := uuid.Parse(in.ID)
+	id, err := domain.ParseID(in.ID)
 	if err != nil {
 		return ViewCapturedRequestOutput{}, fmt.Errorf("failed to parse request id: %w", err)
 	}

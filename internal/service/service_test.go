@@ -219,6 +219,21 @@ func TestViewCapturedRequest_NotFound(t *testing.T) {
 	require.Equal(t, []string{"FindCapturedRequestByID"}, r.Calls())
 }
 
+func TestViewCapturedRequest_InvalidID(t *testing.T) {
+	// Arrange
+	r := mockrepo.NewRepo()
+	p := mockeventpublisher.NewEventPublisher()
+	svc := NewService(r, p)
+
+	// Act
+	_, err := svc.ViewCapturedRequest(context.Background(), ViewCapturedRequestInput{ID: "not-a-uuid"})
+
+	// Assert
+	require.ErrorIs(t, err, domain.ErrInvalidID)
+	require.Contains(t, err.Error(), "failed to parse request id")
+	require.Equal(t, []string{}, r.Calls())
+}
+
 func activeBin() domain.Bin {
 	slug, _ := domain.ParseSlug("abcd1234")
 	return domain.RehydrateBin(
