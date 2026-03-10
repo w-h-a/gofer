@@ -234,6 +234,36 @@ func TestViewCapturedRequest_InvalidID(t *testing.T) {
 	require.Equal(t, []string{}, r.Calls())
 }
 
+func TestCleanupExpiredBins_Success(t *testing.T) {
+	// Arrange
+	r := mockrepo.NewRepo(mockrepo.WithDeleteExpiredResult(3))
+	p := mockeventpublisher.NewEventPublisher()
+	svc := NewService(r, p)
+
+	// Act
+	out, err := svc.CleanupExpiredBins(context.Background())
+
+	// Assert
+	require.NoError(t, err)
+	require.Equal(t, 3, out.Deleted)
+	require.Equal(t, []string{"DeleteExpiredBin"}, r.Calls())
+}
+
+func TestCleanupExpiredBins_RepoError(t *testing.T) {
+	// Arrange
+	r := mockrepo.NewRepo(mockrepo.WithDeleteExpiredErr(errors.New("db down")))
+	p := mockeventpublisher.NewEventPublisher()
+	svc := NewService(r, p)
+
+	// Act
+	_, err := svc.CleanupExpiredBins(context.Background())
+
+	// Assert
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to cleanup expired bins")
+	require.Equal(t, []string{"DeleteExpiredBin"}, r.Calls())
+}
+
 func activeBin() domain.Bin {
 	slug, _ := domain.ParseSlug("abcd1234")
 	return domain.RehydrateBin(

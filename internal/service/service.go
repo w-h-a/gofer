@@ -162,6 +162,15 @@ func (s *Service) ViewCapturedRequest(ctx context.Context, in ViewCapturedReques
 	}, nil
 }
 
+func (s *Service) CleanupExpiredBins(ctx context.Context) (CleanupOutput, error) {
+	deleted, err := s.repo.DeleteExpiredBin(ctx, time.Now())
+	if err != nil {
+		return CleanupOutput{}, fmt.Errorf("failed to cleanup expired bins: %w", err)
+	}
+
+	return CleanupOutput{Deleted: deleted}, nil
+}
+
 func NewService(r repo.Repo, p eventpublisher.EventPublisher) *Service {
 	return &Service{repo: r, pub: p}
 }
