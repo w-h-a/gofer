@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -97,6 +99,194 @@ func TestCreateBin_InternalError(t *testing.T) {
 	var body errorResponse
 	require.NoError(t, json.NewDecoder(rsp.Body).Decode(&body))
 	require.Equal(t, "internal error", body.Error)
+}
+
+func TestSubscribeToBin_UnknownSlug(t *testing.T) {
+	if os.Getenv("INTEGRATION") == "" {
+		t.Skip("skipping integration test")
+	}
+
+	// Arrange
+	ts := newTestServer(t)
+
+	// Act
+	rsp, err := ts.Client().Get(ts.URL + "/api/bins/zzzzzzzz/sse")
+	require.NoError(t, err)
+	defer rsp.Body.Close()
+
+	// Assert
+	require.Equal(t, http.StatusNotFound, rsp.StatusCode)
+
+	var body errorResponse
+	require.NoError(t, json.NewDecoder(rsp.Body).Decode(&body))
+	require.Equal(t, "bin not found", body.Error)
+}
+
+func TestSubscribeToBin_ExpiredBin(t *testing.T) {
+	if os.Getenv("INTEGRATION") == "" {
+		t.Skip("skipping integration test")
+	}
+
+	// Arrange
+	ts := newTestServer(t)
+
+	rsp, err := ts.Client().Post(
+		ts.URL+"/api/bins",
+		"application/json",
+		strings.NewReader(`{"ttl":"1ms"}`),
+	)
+	require.NoError(t, err)
+	defer rsp.Body.Close()
+	require.Equal(t, http.StatusCreated, rsp.StatusCode)
+
+	var bin createBinResponse
+	require.NoError(t, json.NewDecoder(rsp.Body).Decode(&bin))
+
+	// Wait for expiry
+	time.Sleep(5 * time.Millisecond)
+
+	// Act
+	rsp2, err := ts.Client().Get(ts.URL + "/api/bins/" + bin.Slug + "/sse")
+	require.NoError(t, err)
+	defer rsp2.Body.Close()
+
+	// Assert
+	require.Equal(t, http.StatusGone, rsp2.StatusCode)
+
+	var errBody errorResponse
+	require.NoError(t, json.NewDecoder(rsp2.Body).Decode(&errBody))
+	require.Equal(t, "bin is expired", errBody.Error)
+}
+
+func TestSubscribeToBin_FanOut(t *testing.T) {
+	if os.Getenv("INTEGRATION") == "" {
+		t.Skip("skipping integration test")
+	}
+
+	// Arrange
+	ts := newTestServer(t)
+
+	rsp, err := ts.Client().Post(
+		ts.URL+"/api/bins",
+		"application/json",
+		strings.NewReader(`{"ttl":"1h"}`),
+	)
+	require.NoError(t, err)
+	defer rsp.Body.Close()
+	require.Equal(t, http.StatusCreated, rsp.StatusCode)
+
+	var bin createBinResponse
+	require.NoError(t, json.NewDecoder(rsp.Body).Decode(&bin))
+
+	// Connect SSE client
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/api/bins/"+bin.Slug+"/sse", nil)
+	require.NoError(t, err)
+
+	sseRsp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+	defer sseRsp.Body.Close()
+	require.Equal(t, http.StatusOK, sseRsp.StatusCode)
+	require.Equal(t, "text/event-stream", sseRsp.Header.Get("Content-Type"))
+
+	// Read SSE events in background
+	eventCh := make(chan captureRequestResponse, 1)
+	go func() {
+		scanner := bufio.NewScanner(sseRsp.Body)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			var event captureRequestResponse
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event); err != nil {
+				continue
+			}
+			eventCh <- event
+			return
+		}
+	}()
+
+	// Give SSE connection time to establish
+	time.Sleep(50 * time.Millisecond)
+
+	// Act — capture a request to trigger fan-out
+	rsp2, err := ts.Client().Post(
+		ts.URL+"/gofer/"+bin.Slug+"/webhook",
+		"application/json",
+		strings.NewReader(`{"key":"val"}`),
+	)
+	require.NoError(t, err)
+	defer rsp2.Body.Close()
+	require.Equal(t, http.StatusCreated, rsp2.StatusCode)
+
+	var captured captureRequestResponse
+	require.NoError(t, json.NewDecoder(rsp2.Body).Decode(&captured))
+
+	// Assert — SSE client receives the event
+	select {
+	case event := <-eventCh:
+		require.Equal(t, captured.ID, event.ID)
+		require.Equal(t, captured.BinID, event.BinID)
+		require.Equal(t, captured.SequenceNum, event.SequenceNum)
+		require.Equal(t, captured.Method, event.Method)
+		require.Equal(t, captured.Path, event.Path)
+		require.Equal(t, captured.ContentType, event.ContentType)
+		require.Equal(t, captured.BodySize, event.BodySize)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for SSE event")
+	}
+}
+
+func TestSubscribeToBin_CleanupOnDisconnect(t *testing.T) {
+	if os.Getenv("INTEGRATION") == "" {
+		t.Skip("skipping integration test")
+	}
+
+	// Arrange
+	ts := newTestServer(t)
+
+	rsp, err := ts.Client().Post(
+		ts.URL+"/api/bins",
+		"application/json",
+		strings.NewReader(`{"ttl":"1h"}`),
+	)
+	require.NoError(t, err)
+	defer rsp.Body.Close()
+	require.Equal(t, http.StatusCreated, rsp.StatusCode)
+
+	var bin createBinResponse
+	require.NoError(t, json.NewDecoder(rsp.Body).Decode(&bin))
+
+	// Connect SSE client
+	ctx, cancel := context.WithCancel(context.Background())
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/api/bins/"+bin.Slug+"/sse", nil)
+	require.NoError(t, err)
+
+	sseRsp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+
+	require.Equal(t, http.StatusOK, sseRsp.StatusCode)
+
+	// Act — disconnect the SSE client
+	cancel()
+	sseRsp.Body.Close()
+
+	// Give the handler time to run the deferred unsubscribe
+	time.Sleep(50 * time.Millisecond)
+
+	// Assert — capturing a request still works (no panic from publishing to a closed channel)
+	rsp2, err := ts.Client().Post(
+		ts.URL+"/gofer/"+bin.Slug+"/webhook",
+		"application/json",
+		strings.NewReader(`{"key":"val"}`),
+	)
+	require.NoError(t, err)
+	defer rsp2.Body.Close()
+	require.Equal(t, http.StatusCreated, rsp2.StatusCode)
 }
 
 func TestCaptureRequest_UnknownSlug(t *testing.T) {
