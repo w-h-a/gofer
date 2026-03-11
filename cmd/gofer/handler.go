@@ -2,12 +2,15 @@ package main
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/w-h-a/gofer/internal/service"
 )
 
 type handler struct {
-	svc *service.Service
+	svc        *service.Service
+	defaultTTL time.Duration
+	version    string
 }
 
 func (h *handler) routes() http.Handler {
@@ -20,6 +23,6 @@ func (h *handler) routes() http.Handler {
 	return mux
 }
 
-func newHandler(svc *service.Service) *handler {
-	return &handler{svc: svc}
+func newHandler(svc *service.Service, defaultTTL time.Duration, version string) *handler {
+	return &handler{svc: svc, defaultTTL: defaultTTL, version: version}
 }
