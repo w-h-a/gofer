@@ -77,7 +77,7 @@ func TestCreateBin_InternalError(t *testing.T) {
 	pub, err := sse.NewEventPublisher()
 	require.NoError(t, err)
 	svc := service.NewService(r, pub)
-	h := newHandler(svc)
+	h := newHandler(svc, 48*time.Hour, "test")
 
 	ts := httptest.NewServer(h.routes())
 	t.Cleanup(ts.Close)
@@ -507,7 +507,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 	require.NoError(t, err)
 
 	svc := service.NewService(r, p)
-	h := newHandler(svc)
+	h := newHandler(svc, 48*time.Hour, "test")
 
 	ts := httptest.NewServer(h.routes())
 	t.Cleanup(ts.Close)

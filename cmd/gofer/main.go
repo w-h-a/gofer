@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -16,12 +18,24 @@ import (
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	repoLocation := os.Getenv("REPO_LOCATION")
-	if repoLocation == "" {
-		repoLocation = "gofer.db"
+	version := envOr("VERSION", "dev")
+	repoLocation := envOr("REPO_LOCATION", "gofer.db")
+
+	port := envOr("PORT", "8080")
+	if _, err := strconv.Atoi(port); err != nil {
+		slog.Error("invalid PORT", "value", port, "error", err)
+		os.Exit(1)
+	}
+
+	ttl, err := time.ParseDuration(envOr("TTL", "48h"))
+	if err != nil {
+		slog.Error("invalid TTL", "error", err)
+		os.Exit(1)
 	}
 
 	r, err := sqlite.NewRepo(repo.WithLocation(repoLocation))
@@ -37,15 +51,19 @@ func main() {
 	}
 
 	svc := service.NewService(r, p)
-	h := newHandler(svc)
+	h := newHandler(svc, ttl, version)
+
+	addr := fmt.Sprintf(":%s", port)
 
 	srv := &http.Server{
-		Addr:    ":8080",
+		Addr:    addr,
 		Handler: h.routes(),
 	}
 
+	go runCleanup(ctx, svc)
+
 	go func() {
-		slog.Info("starting server", "addr", srv.Addr)
+		slog.Info("starting server", "addr", srv.Addr, "version", version)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("server error", "error", err)
 			os.Exit(1)
@@ -64,4 +82,32 @@ func main() {
 	}
 
 	slog.Info("server stopped")
+}
+
+func runCleanup(ctx context.Context, svc *service.Service) {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			out, err := svc.CleanupExpiredBins(ctx)
+			if err != nil {
+				slog.Error("cleanup failed", "error", err)
+				continue
+			}
+			if out.Deleted > 0 {
+				slog.Info("cleanup completed", "deleted", out.Deleted)
+			}
+		}
+	}
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }

@@ -10,10 +10,6 @@ import (
 	"github.com/w-h-a/gofer/internal/service"
 )
 
-const (
-	defaultTTL = 48 * time.Hour
-)
-
 type createBinRequest struct {
 	TTL string `json:"ttl"`
 }
@@ -26,7 +22,7 @@ type createBinResponse struct {
 }
 
 func (h *handler) handleCreateBin(w http.ResponseWriter, r *http.Request) {
-	ttl := defaultTTL
+	ttl := h.defaultTTL
 
 	var req createBinRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
