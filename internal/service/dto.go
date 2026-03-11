@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/w-h-a/gofer/internal/domain"
 )
 
 type CreateBinInput struct {
@@ -78,6 +79,20 @@ type ViewCapturedRequestOutput struct {
 	BodySize    int
 	CapturedAt  time.Time
 	Body        []byte
+}
+
+type SubscribeToBinInput struct {
+	Slug string
+}
+
+type SubscribeToBinOutput struct {
+	BinID   uuid.UUID
+	Channel <-chan domain.CapturedRequest
+}
+
+type UnsubscribeFromBinInput struct {
+	BinID   uuid.UUID
+	Channel <-chan domain.CapturedRequest
 }
 
 type CleanupOutput struct {

@@ -162,6 +162,40 @@ func (s *Service) ViewCapturedRequest(ctx context.Context, in ViewCapturedReques
 	}, nil
 }
 
+func (s *Service) SubscribeToBin(ctx context.Context, in SubscribeToBinInput) (SubscribeToBinOutput, error) {
+	slug, err := domain.ParseSlug(in.Slug)
+	if err != nil {
+		return SubscribeToBinOutput{}, fmt.Errorf("failed to parse slug: %w", err)
+	}
+
+	bin, err := s.repo.FindBinBySlug(ctx, slug)
+	if err != nil {
+		return SubscribeToBinOutput{}, fmt.Errorf("failed to find bin: %w", err)
+	}
+
+	if bin.IsExpired(time.Now()) {
+		return SubscribeToBinOutput{}, ErrBinExpired
+	}
+
+	ch, err := s.pub.Subscribe(ctx, bin.ID())
+	if err != nil {
+		return SubscribeToBinOutput{}, fmt.Errorf("failed to subscribe to bin: %w", err)
+	}
+
+	return SubscribeToBinOutput{
+		BinID:   bin.ID(),
+		Channel: ch,
+	}, nil
+}
+
+func (s *Service) UnsubscribeFromBin(ctx context.Context, in UnsubscribeFromBinInput) error {
+	if err := s.pub.Unsubscribe(ctx, in.BinID, in.Channel); err != nil {
+		return fmt.Errorf("failed to unsubscribe from bin: %w", err)
+	}
+
+	return nil
+}
+
 func (s *Service) CleanupExpiredBins(ctx context.Context) (CleanupOutput, error) {
 	deleted, err := s.repo.DeleteExpiredBin(ctx, time.Now())
 	if err != nil {

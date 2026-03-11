@@ -234,6 +234,123 @@ func TestViewCapturedRequest_InvalidID(t *testing.T) {
 	require.Equal(t, []string{}, r.Calls())
 }
 
+func TestSubscribeToBin_Success(t *testing.T) {
+	// Arrange
+	bin := activeBin()
+	ch := make(chan domain.CapturedRequest)
+	r := mockrepo.NewRepo(mockrepo.WithFindBinResult(bin))
+	p := mockeventpublisher.NewEventPublisher(mockeventpublisher.WithSubscribeResult(ch))
+	svc := NewService(r, p)
+
+	// Act
+	out, err := svc.SubscribeToBin(context.Background(), SubscribeToBinInput{
+		Slug: bin.Slug().String(),
+	})
+
+	// Assert
+	require.NoError(t, err)
+	require.Equal(t, bin.ID(), out.BinID)
+	require.Equal(t, (<-chan domain.CapturedRequest)(ch), out.Channel)
+	require.Equal(t, []string{"FindBinBySlug"}, r.Calls())
+	require.Equal(t, []string{"Subscribe"}, p.Calls())
+}
+
+func TestSubscribeToBin_NotFound(t *testing.T) {
+	// Arrange
+	r := mockrepo.NewRepo(mockrepo.WithFindBinErr(repo.ErrNotFound))
+	p := mockeventpublisher.NewEventPublisher()
+	svc := NewService(r, p)
+
+	// Act
+	_, err := svc.SubscribeToBin(context.Background(), SubscribeToBinInput{
+		Slug: "abcd1234",
+	})
+
+	// Assert
+	require.ErrorIs(t, err, repo.ErrNotFound)
+	require.Equal(t, []string{"FindBinBySlug"}, r.Calls())
+	require.Equal(t, []string{}, p.Calls())
+}
+
+func TestSubscribeToBin_Expired(t *testing.T) {
+	// Arrange
+	r := mockrepo.NewRepo(mockrepo.WithFindBinResult(expiredBin()))
+	p := mockeventpublisher.NewEventPublisher()
+	svc := NewService(r, p)
+
+	// Act
+	_, err := svc.SubscribeToBin(context.Background(), SubscribeToBinInput{
+		Slug: "abcd1234",
+	})
+
+	// Assert
+	require.ErrorIs(t, err, ErrBinExpired)
+	require.Equal(t, []string{"FindBinBySlug"}, r.Calls())
+	require.Equal(t, []string{}, p.Calls())
+}
+
+func TestSubscribeToBin_SubscribeError(t *testing.T) {
+	// Arrange
+	bin := activeBin()
+	r := mockrepo.NewRepo(mockrepo.WithFindBinResult(bin))
+	p := mockeventpublisher.NewEventPublisher(
+		mockeventpublisher.WithSubscribeErr(errors.New("hub down")),
+	)
+	svc := NewService(r, p)
+
+	// Act
+	_, err := svc.SubscribeToBin(context.Background(), SubscribeToBinInput{
+		Slug: bin.Slug().String(),
+	})
+
+	// Assert
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to subscribe to bin")
+	require.Equal(t, []string{"FindBinBySlug"}, r.Calls())
+	require.Equal(t, []string{"Subscribe"}, p.Calls())
+}
+
+func TestUnsubscribeFromBin_Success(t *testing.T) {
+	// Arrange
+	ch := make(chan domain.CapturedRequest)
+	r := mockrepo.NewRepo()
+	p := mockeventpublisher.NewEventPublisher()
+	svc := NewService(r, p)
+
+	// Act
+	err := svc.UnsubscribeFromBin(context.Background(), UnsubscribeFromBinInput{
+		BinID:   uuid.New(),
+		Channel: ch,
+	})
+
+	// Assert
+	require.NoError(t, err)
+	require.Equal(t, []string{}, r.Calls())
+	require.Equal(t, []string{"Unsubscribe"}, p.Calls())
+}
+
+func TestUnsubscribeFromBin_Error(t *testing.T) {
+	// Arrange
+	ch := make(chan domain.CapturedRequest)
+	r := mockrepo.NewRepo()
+	p := mockeventpublisher.NewEventPublisher(
+		mockeventpublisher.WithUnsubscribeErr(errors.New("hub error")),
+	)
+	svc := NewService(r, p)
+
+	// Act
+	err := svc.UnsubscribeFromBin(context.Background(), UnsubscribeFromBinInput{
+		BinID:   uuid.New(),
+		Channel: ch,
+	})
+
+	// Assert
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to unsubscribe from bin")
+	require.Equal(t, []string{}, r.Calls())
+	require.Equal(t, []string{"Unsubscribe"}, p.Calls())
+}
+
 func TestCleanupExpiredBins_Success(t *testing.T) {
 	// Arrange
 	r := mockrepo.NewRepo(mockrepo.WithDeleteExpiredResult(3))
