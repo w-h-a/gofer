@@ -9,9 +9,12 @@ import (
 )
 
 type mockEventPublisher struct {
-	options    eventpublisher.Options
-	recorder   *callRecorder
-	publishErr error
+	options         eventpublisher.Options
+	recorder        *callRecorder
+	publishErr      error
+	subscribeResult <-chan domain.CapturedRequest
+	subscribeErr    error
+	unsubscribeErr  error
 }
 
 func (p *mockEventPublisher) Publish(_ context.Context, _ domain.CapturedRequest) error {
@@ -20,11 +23,13 @@ func (p *mockEventPublisher) Publish(_ context.Context, _ domain.CapturedRequest
 }
 
 func (p *mockEventPublisher) Subscribe(_ context.Context, _ uuid.UUID) (<-chan domain.CapturedRequest, error) {
-	return nil, nil
+	p.recorder.record("Subscribe")
+	return p.subscribeResult, p.subscribeErr
 }
 
 func (p *mockEventPublisher) Unsubscribe(_ context.Context, _ uuid.UUID, _ <-chan domain.CapturedRequest) error {
-	return nil
+	p.recorder.record("Unsubscribe")
+	return p.unsubscribeErr
 }
 
 func (p *mockEventPublisher) Calls() []string {
@@ -41,6 +46,18 @@ func NewEventPublisher(opts ...eventpublisher.Option) *mockEventPublisher {
 
 	if e, ok := PublishErrFrom(options.Context); ok {
 		p.publishErr = e
+	}
+
+	if ch, ok := SubscribeResultFrom(options.Context); ok {
+		p.subscribeResult = ch
+	}
+
+	if e, ok := SubscribeErrFrom(options.Context); ok {
+		p.subscribeErr = e
+	}
+
+	if e, ok := UnsubscribeErrFrom(options.Context); ok {
+		p.unsubscribeErr = e
 	}
 
 	return p
