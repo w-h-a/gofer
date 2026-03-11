@@ -80,6 +80,17 @@ type ViewCapturedRequestOutput struct {
 	Body        []byte
 }
 
+type ValidateBinInput struct {
+	Slug string
+}
+
+type ValidateBinOutput struct {
+	ID        uuid.UUID
+	Slug      string
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
 type CleanupOutput struct {
 	Deleted int
 }

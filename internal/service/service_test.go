@@ -234,6 +234,53 @@ func TestViewCapturedRequest_InvalidID(t *testing.T) {
 	require.Equal(t, []string{}, r.Calls())
 }
 
+func TestValidateBin_Success(t *testing.T) {
+	// Arrange
+	bin := activeBin()
+	r := mockrepo.NewRepo(mockrepo.WithFindBinResult(bin))
+	p := mockeventpublisher.NewEventPublisher()
+	svc := NewService(r, p)
+
+	// Act
+	out, err := svc.ValidateBin(context.Background(), ValidateBinInput{Slug: bin.Slug().String()})
+
+	// Assert
+	require.NoError(t, err)
+	require.Equal(t, bin.ID(), out.ID)
+	require.Equal(t, bin.Slug().String(), out.Slug)
+	require.False(t, out.ExpiresAt.Before(out.CreatedAt))
+	require.Equal(t, []string{"FindBinBySlug"}, r.Calls())
+}
+
+func TestValidateBin_NotFound(t *testing.T) {
+	// Arrange
+	r := mockrepo.NewRepo(mockrepo.WithFindBinErr(repo.ErrNotFound))
+	p := mockeventpublisher.NewEventPublisher()
+	svc := NewService(r, p)
+
+	// Act
+	_, err := svc.ValidateBin(context.Background(), ValidateBinInput{Slug: "abcd1234"})
+
+	// Assert
+	require.ErrorIs(t, err, repo.ErrNotFound)
+	require.Contains(t, err.Error(), "failed to find bin")
+	require.Equal(t, []string{"FindBinBySlug"}, r.Calls())
+}
+
+func TestValidateBin_Expired(t *testing.T) {
+	// Arrange
+	r := mockrepo.NewRepo(mockrepo.WithFindBinResult(expiredBin()))
+	p := mockeventpublisher.NewEventPublisher()
+	svc := NewService(r, p)
+
+	// Act
+	_, err := svc.ValidateBin(context.Background(), ValidateBinInput{Slug: "abcd1234"})
+
+	// Assert
+	require.ErrorIs(t, err, ErrBinExpired)
+	require.Equal(t, []string{"FindBinBySlug"}, r.Calls())
+}
+
 func TestCleanupExpiredBins_Success(t *testing.T) {
 	// Arrange
 	r := mockrepo.NewRepo(mockrepo.WithDeleteExpiredResult(3))

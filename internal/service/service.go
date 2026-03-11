@@ -162,6 +162,29 @@ func (s *Service) ViewCapturedRequest(ctx context.Context, in ViewCapturedReques
 	}, nil
 }
 
+func (s *Service) ValidateBin(ctx context.Context, in ValidateBinInput) (ValidateBinOutput, error) {
+	slug, err := domain.ParseSlug(in.Slug)
+	if err != nil {
+		return ValidateBinOutput{}, fmt.Errorf("failed to parse slug: %w", err)
+	}
+
+	bin, err := s.repo.FindBinBySlug(ctx, slug)
+	if err != nil {
+		return ValidateBinOutput{}, fmt.Errorf("failed to find bin: %w", err)
+	}
+
+	if bin.IsExpired(time.Now()) {
+		return ValidateBinOutput{}, ErrBinExpired
+	}
+
+	return ValidateBinOutput{
+		ID:        bin.ID(),
+		Slug:      bin.Slug().String(),
+		CreatedAt: bin.CreatedAt(),
+		ExpiresAt: bin.ExpiresAt(),
+	}, nil
+}
+
 func (s *Service) CleanupExpiredBins(ctx context.Context) (CleanupOutput, error) {
 	deleted, err := s.repo.DeleteExpiredBin(ctx, time.Now())
 	if err != nil {
