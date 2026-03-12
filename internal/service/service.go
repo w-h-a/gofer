@@ -9,6 +9,9 @@ import (
 	eventpublisher "github.com/w-h-a/gofer/internal/client/event_publisher"
 	"github.com/w-h-a/gofer/internal/client/repo"
 	"github.com/w-h-a/gofer/internal/domain"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -16,24 +19,36 @@ var (
 )
 
 type Service struct {
-	repo repo.Repo
-	pub  eventpublisher.EventPublisher
+	repo   repo.Repo
+	pub    eventpublisher.EventPublisher
+	tracer trace.Tracer
 }
 
 func (s *Service) CreateBin(ctx context.Context, in CreateBinInput) (CreateBinOutput, error) {
+	ctx, span := s.tracer.Start(ctx, "bin.Create")
+	defer span.End()
+
 	slug, err := domain.NewSlug()
 	if err != nil {
+		span.RecordError(err)
 		return CreateBinOutput{}, fmt.Errorf("failed to generate slug: %w", err)
 	}
 
 	bin, err := domain.NewBin(slug, in.TTL)
 	if err != nil {
+		span.RecordError(err)
 		return CreateBinOutput{}, fmt.Errorf("failed to create bin: %w", err)
 	}
 
 	if err := s.repo.SaveBin(ctx, bin); err != nil {
+		span.RecordError(err)
 		return CreateBinOutput{}, fmt.Errorf("failed to save bin: %w", err)
 	}
+
+	span.SetAttributes(
+		attribute.String("bin.slug", bin.Slug().String()),
+		attribute.String("bin.id", bin.ID().String()),
+	)
 
 	return CreateBinOutput{
 		ID:        bin.ID(),
@@ -44,24 +59,39 @@ func (s *Service) CreateBin(ctx context.Context, in CreateBinInput) (CreateBinOu
 }
 
 func (s *Service) SubscribeToBin(ctx context.Context, in SubscribeToBinInput) (SubscribeToBinOutput, error) {
+	ctx, span := s.tracer.Start(ctx, "bin.Subscribe")
+	defer span.End()
+
 	slug, err := domain.ParseSlug(in.Slug)
 	if err != nil {
+		span.RecordError(err)
 		return SubscribeToBinOutput{}, fmt.Errorf("failed to parse slug: %w", err)
 	}
 
+	span.SetAttributes(
+		attribute.String("bin.slug", slug.String()),
+	)
+
 	bin, err := s.repo.FindBinBySlug(ctx, slug)
 	if err != nil {
+		span.RecordError(err)
 		return SubscribeToBinOutput{}, fmt.Errorf("failed to find bin: %w", err)
 	}
 
 	if bin.IsExpired(time.Now()) {
+		span.RecordError(ErrBinExpired)
 		return SubscribeToBinOutput{}, ErrBinExpired
 	}
 
 	ch, err := s.pub.Subscribe(ctx, bin.ID())
 	if err != nil {
+		span.RecordError(err)
 		return SubscribeToBinOutput{}, fmt.Errorf("failed to subscribe to bin: %w", err)
 	}
+
+	span.SetAttributes(
+		attribute.String("bin.id", bin.ID().String()),
+	)
 
 	return SubscribeToBinOutput{
 		BinID:   bin.ID(),
@@ -70,7 +100,15 @@ func (s *Service) SubscribeToBin(ctx context.Context, in SubscribeToBinInput) (S
 }
 
 func (s *Service) UnsubscribeFromBin(ctx context.Context, in UnsubscribeFromBinInput) error {
+	ctx, span := s.tracer.Start(ctx, "bin.Unsubscribe")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("bin.id", in.BinID.String()),
+	)
+
 	if err := s.pub.Unsubscribe(ctx, in.BinID, in.Channel); err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to unsubscribe from bin: %w", err)
 	}
 
@@ -78,17 +116,27 @@ func (s *Service) UnsubscribeFromBin(ctx context.Context, in UnsubscribeFromBinI
 }
 
 func (s *Service) CaptureRequest(ctx context.Context, in CaptureRequestInput) (CaptureRequestOutput, error) {
+	ctx, span := s.tracer.Start(ctx, "capture.Request")
+	defer span.End()
+
 	slug, err := domain.ParseSlug(in.Slug)
 	if err != nil {
+		span.RecordError(err)
 		return CaptureRequestOutput{}, fmt.Errorf("failed to parse slug: %w", err)
 	}
 
+	span.SetAttributes(
+		attribute.String("bin.slug", slug.String()),
+	)
+
 	bin, err := s.repo.FindBinBySlug(ctx, slug)
 	if err != nil {
+		span.RecordError(err)
 		return CaptureRequestOutput{}, fmt.Errorf("failed to find bin: %w", err)
 	}
 
 	if bin.IsExpired(time.Now()) {
+		span.RecordError(ErrBinExpired)
 		return CaptureRequestOutput{}, ErrBinExpired
 	}
 
@@ -103,17 +151,24 @@ func (s *Service) CaptureRequest(ctx context.Context, in CaptureRequestInput) (C
 		payload,
 	)
 	if err != nil {
+		span.RecordError(err)
 		return CaptureRequestOutput{}, fmt.Errorf("failed to create captured request: %w", err)
 	}
 
 	saved, err := s.repo.SaveCapturedRequest(ctx, req)
 	if err != nil {
+		span.RecordError(err)
 		return CaptureRequestOutput{}, fmt.Errorf("failed to save captured request: %w", err)
 	}
 
 	if err := s.pub.Publish(ctx, saved); err != nil {
+		span.RecordError(err)
 		return CaptureRequestOutput{}, fmt.Errorf("failed to publish captured request: %w", err)
 	}
+
+	span.SetAttributes(
+		attribute.Int("sequence_num", saved.SequenceNum()),
+	)
 
 	return CaptureRequestOutput{
 		ID:          saved.ID(),
@@ -128,22 +183,33 @@ func (s *Service) CaptureRequest(ctx context.Context, in CaptureRequestInput) (C
 }
 
 func (s *Service) ViewBin(ctx context.Context, in ViewBinInput) (ViewBinOutput, error) {
+	ctx, span := s.tracer.Start(ctx, "bin.View")
+	defer span.End()
+
 	slug, err := domain.ParseSlug(in.Slug)
 	if err != nil {
+		span.RecordError(err)
 		return ViewBinOutput{}, fmt.Errorf("failed to parse slug: %w", err)
 	}
 
+	span.SetAttributes(
+		attribute.String("bin.slug", slug.String()),
+	)
+
 	bin, err := s.repo.FindBinBySlug(ctx, slug)
 	if err != nil {
+		span.RecordError(err)
 		return ViewBinOutput{}, fmt.Errorf("failed to find bin: %w", err)
 	}
 
 	if bin.IsExpired(time.Now()) {
+		span.RecordError(ErrBinExpired)
 		return ViewBinOutput{}, ErrBinExpired
 	}
 
 	reqs, err := s.repo.FindCapturedRequestByBinID(ctx, bin.ID())
 	if err != nil {
+		span.RecordError(err)
 		return ViewBinOutput{}, fmt.Errorf("failed to find captured requests: %w", err)
 	}
 
@@ -160,6 +226,10 @@ func (s *Service) ViewBin(ctx context.Context, in ViewBinInput) (ViewBinOutput, 
 		}
 	}
 
+	span.SetAttributes(
+		attribute.Int("requests.count", len(reqs)),
+	)
+
 	return ViewBinOutput{
 		ID:        bin.ID(),
 		Slug:      bin.Slug().String(),
@@ -170,13 +240,22 @@ func (s *Service) ViewBin(ctx context.Context, in ViewBinInput) (ViewBinOutput, 
 }
 
 func (s *Service) ViewCapturedRequest(ctx context.Context, in ViewCapturedRequestInput) (ViewCapturedRequestOutput, error) {
+	ctx, span := s.tracer.Start(ctx, "request.View")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("request.id", in.ID),
+	)
+
 	id, err := domain.ParseID(in.ID)
 	if err != nil {
+		span.RecordError(err)
 		return ViewCapturedRequestOutput{}, fmt.Errorf("failed to parse request id: %w", err)
 	}
 
 	req, err := s.repo.FindCapturedRequestByID(ctx, id)
 	if err != nil {
+		span.RecordError(err)
 		return ViewCapturedRequestOutput{}, fmt.Errorf("failed to find captured request: %w", err)
 	}
 
@@ -197,14 +276,26 @@ func (s *Service) ViewCapturedRequest(ctx context.Context, in ViewCapturedReques
 }
 
 func (s *Service) CleanupExpiredBins(ctx context.Context) (CleanupOutput, error) {
+	ctx, span := s.tracer.Start(ctx, "bins.Cleanup")
+	defer span.End()
+
 	deleted, err := s.repo.DeleteExpiredBin(ctx, time.Now())
 	if err != nil {
+		span.RecordError(err)
 		return CleanupOutput{}, fmt.Errorf("failed to cleanup expired bins: %w", err)
 	}
+
+	span.SetAttributes(
+		attribute.Int("deleted.count", deleted),
+	)
 
 	return CleanupOutput{Deleted: deleted}, nil
 }
 
 func NewService(r repo.Repo, p eventpublisher.EventPublisher) *Service {
-	return &Service{repo: r, pub: p}
+	return &Service{
+		repo:   r,
+		pub:    p,
+		tracer: otel.Tracer("github.com/w-h-a/gofer/internal/service"),
+	}
 }
