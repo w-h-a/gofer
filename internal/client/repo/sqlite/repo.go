@@ -12,9 +12,30 @@ import (
 	"github.com/google/uuid"
 	"github.com/w-h-a/gofer/internal/client/repo"
 	"github.com/w-h-a/gofer/internal/domain"
+	"go.nhat.io/otelsql"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 
 	_ "modernc.org/sqlite"
 )
+
+var DRIVER string
+
+func init() {
+	driver, err := otelsql.Register(
+		"sqlite",
+		otelsql.TraceQueryWithoutArgs(),
+		otelsql.TraceRowsClose(),
+		otelsql.TraceRowsAffected(),
+		otelsql.WithSystem(semconv.DBSystemSqlite),
+	)
+	if err != nil {
+		detail := "failed to register sqlite driver with otel"
+		slog.ErrorContext(context.Background(), detail, "error", err)
+		panic(detail)
+	}
+
+	DRIVER = driver
+}
 
 type sqliteRepo struct {
 	options repo.Options
@@ -226,7 +247,7 @@ func (r *sqliteRepo) configure() error {
 func NewRepo(opts ...repo.Option) (repo.Repo, error) {
 	options := repo.NewOptions(opts...)
 
-	conn, err := sql.Open("sqlite", options.Location)
+	conn, err := sql.Open(DRIVER, options.Location)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
