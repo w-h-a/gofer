@@ -11,6 +11,7 @@ import (
 	"github.com/w-h-a/gofer/internal/domain"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -31,6 +32,7 @@ func (s *Service) CreateBin(ctx context.Context, in CreateBinInput) (CreateBinOu
 	slug, err := domain.NewSlug()
 	if err != nil {
 		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return CreateBinOutput{}, fmt.Errorf("failed to generate slug: %w", err)
 	}
 
@@ -42,6 +44,7 @@ func (s *Service) CreateBin(ctx context.Context, in CreateBinInput) (CreateBinOu
 
 	if err := s.repo.SaveBin(ctx, bin); err != nil {
 		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return CreateBinOutput{}, fmt.Errorf("failed to save bin: %w", err)
 	}
 
@@ -75,6 +78,9 @@ func (s *Service) SubscribeToBin(ctx context.Context, in SubscribeToBinInput) (S
 	bin, err := s.repo.FindBinBySlug(ctx, slug)
 	if err != nil {
 		span.RecordError(err)
+		if !errors.Is(err, repo.ErrNotFound) {
+			span.SetStatus(codes.Error, err.Error())
+		}
 		return SubscribeToBinOutput{}, fmt.Errorf("failed to find bin: %w", err)
 	}
 
@@ -86,6 +92,7 @@ func (s *Service) SubscribeToBin(ctx context.Context, in SubscribeToBinInput) (S
 	ch, err := s.pub.Subscribe(ctx, bin.ID())
 	if err != nil {
 		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return SubscribeToBinOutput{}, fmt.Errorf("failed to subscribe to bin: %w", err)
 	}
 
@@ -109,6 +116,7 @@ func (s *Service) UnsubscribeFromBin(ctx context.Context, in UnsubscribeFromBinI
 
 	if err := s.pub.Unsubscribe(ctx, in.BinID, in.Channel); err != nil {
 		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf("failed to unsubscribe from bin: %w", err)
 	}
 
@@ -132,6 +140,9 @@ func (s *Service) CaptureRequest(ctx context.Context, in CaptureRequestInput) (C
 	bin, err := s.repo.FindBinBySlug(ctx, slug)
 	if err != nil {
 		span.RecordError(err)
+		if !errors.Is(err, repo.ErrNotFound) {
+			span.SetStatus(codes.Error, err.Error())
+		}
 		return CaptureRequestOutput{}, fmt.Errorf("failed to find bin: %w", err)
 	}
 
@@ -158,11 +169,13 @@ func (s *Service) CaptureRequest(ctx context.Context, in CaptureRequestInput) (C
 	saved, err := s.repo.SaveCapturedRequest(ctx, req)
 	if err != nil {
 		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return CaptureRequestOutput{}, fmt.Errorf("failed to save captured request: %w", err)
 	}
 
 	if err := s.pub.Publish(ctx, saved); err != nil {
 		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return CaptureRequestOutput{}, fmt.Errorf("failed to publish captured request: %w", err)
 	}
 
@@ -199,6 +212,9 @@ func (s *Service) ViewBin(ctx context.Context, in ViewBinInput) (ViewBinOutput, 
 	bin, err := s.repo.FindBinBySlug(ctx, slug)
 	if err != nil {
 		span.RecordError(err)
+		if !errors.Is(err, repo.ErrNotFound) {
+			span.SetStatus(codes.Error, err.Error())
+		}
 		return ViewBinOutput{}, fmt.Errorf("failed to find bin: %w", err)
 	}
 
@@ -210,6 +226,7 @@ func (s *Service) ViewBin(ctx context.Context, in ViewBinInput) (ViewBinOutput, 
 	reqs, err := s.repo.FindCapturedRequestByBinID(ctx, bin.ID())
 	if err != nil {
 		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return ViewBinOutput{}, fmt.Errorf("failed to find captured requests: %w", err)
 	}
 
@@ -256,6 +273,9 @@ func (s *Service) ViewCapturedRequest(ctx context.Context, in ViewCapturedReques
 	req, err := s.repo.FindCapturedRequestByID(ctx, id)
 	if err != nil {
 		span.RecordError(err)
+		if !errors.Is(err, repo.ErrNotFound) {
+			span.SetStatus(codes.Error, err.Error())
+		}
 		return ViewCapturedRequestOutput{}, fmt.Errorf("failed to find captured request: %w", err)
 	}
 
@@ -282,6 +302,7 @@ func (s *Service) CleanupExpiredBins(ctx context.Context) (CleanupOutput, error)
 	deleted, err := s.repo.DeleteExpiredBin(ctx, time.Now())
 	if err != nil {
 		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return CleanupOutput{}, fmt.Errorf("failed to cleanup expired bins: %w", err)
 	}
 
