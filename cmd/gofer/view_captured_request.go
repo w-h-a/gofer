@@ -39,7 +39,7 @@ func (h *handler) handleViewCapturedRequest(w http.ResponseWriter, r *http.Reque
 		case errors.Is(err, repo.ErrNotFound):
 			writeJSON(w, http.StatusNotFound, errorResponse{Error: "request not found"})
 		default:
-			slog.Error("failed to view captured request", "error", err)
+			slog.ErrorContext(r.Context(), "failed to view captured request", "error", err)
 			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		}
 		return

@@ -15,15 +15,33 @@ import (
 	"github.com/w-h-a/gofer/internal/client/repo"
 	"github.com/w-h-a/gofer/internal/client/repo/sqlite"
 	"github.com/w-h-a/gofer/internal/service"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
-
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	version := envOr("VERSION", "dev")
+
+	res, err := newResource(ctx, version)
+	if err != nil {
+		slog.Error("failed to create resource", "error", err)
+		os.Exit(1)
+	}
+
+	shutdownTracer, err := initTracer(ctx, res)
+	if err != nil {
+		slog.Error("failed to init tracer", "error", err)
+		os.Exit(1)
+	}
+
+	shutdownLogger, err := initLogger(ctx, res)
+	if err != nil {
+		slog.Error("failed to init logger", "error", err)
+		os.Exit(1)
+	}
+
 	repoLocation := envOr("REPO_LOCATION", "gofer.db")
 
 	port := envOr("PORT", "8080")
@@ -56,8 +74,12 @@ func main() {
 	addr := fmt.Sprintf(":%s", port)
 
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: h.routes(),
+		Addr: addr,
+		Handler: otelhttp.NewHandler(h.routes(), "gofer",
+			otelhttp.WithFilter(func(r *http.Request) bool {
+				return r.URL.Path != "/healthz"
+			}),
+		),
 	}
 
 	go runCleanup(ctx, svc)
@@ -78,10 +100,17 @@ func main() {
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.Error("shutdown error", "error", err)
-		os.Exit(1)
 	}
 
 	slog.Info("server stopped")
+
+	if err := shutdownTracer(shutdownCtx); err != nil {
+		slog.Error("tracer shutdown error", "error", err)
+	}
+
+	if err := shutdownLogger(shutdownCtx); err != nil {
+		slog.Error("logger shutdown error", "error", err)
+	}
 }
 
 func runCleanup(ctx context.Context, svc *service.Service) {
@@ -95,11 +124,11 @@ func runCleanup(ctx context.Context, svc *service.Service) {
 		case <-ticker.C:
 			out, err := svc.CleanupExpiredBins(ctx)
 			if err != nil {
-				slog.Error("cleanup failed", "error", err)
+				slog.ErrorContext(ctx, "cleanup failed", "error", err)
 				continue
 			}
 			if out.Deleted > 0 {
-				slog.Info("cleanup completed", "deleted", out.Deleted)
+				slog.InfoContext(ctx, "cleanup completed", "deleted", out.Deleted)
 			}
 		}
 	}
