@@ -41,7 +41,7 @@ func (h *handler) handleCreateBin(w http.ResponseWriter, r *http.Request) {
 
 	out, err := h.svc.CreateBin(r.Context(), service.CreateBinInput{TTL: ttl})
 	if err != nil {
-		slog.Error("failed to create bin", "error", err)
+		slog.ErrorContext(r.Context(), "failed to create bin", "error", err)
 		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}

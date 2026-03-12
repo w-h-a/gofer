@@ -44,7 +44,7 @@ func (h *handler) handleViewBin(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, service.ErrBinExpired):
 			writeJSON(w, http.StatusGone, errorResponse{Error: "bin is expired"})
 		default:
-			slog.Error("failed to view bin", "error", err)
+			slog.ErrorContext(r.Context(), "failed to view bin", "error", err)
 			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		}
 		return

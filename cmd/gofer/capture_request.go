@@ -13,6 +13,9 @@ import (
 	"github.com/w-h-a/gofer/internal/client/repo"
 	"github.com/w-h-a/gofer/internal/domain"
 	"github.com/w-h-a/gofer/internal/service"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -45,14 +48,14 @@ func (h *handler) handleSubscribeToBin(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, service.ErrBinExpired):
 			writeJSON(w, http.StatusGone, errorResponse{Error: "bin is expired"})
 		default:
-			slog.Error("failed to subscribe to bin", "error", err)
+			slog.ErrorContext(r.Context(), "failed to subscribe to bin", "error", err)
 			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		}
 		return
 	}
 
-	slog.Info("sse client connected", "slug", slug, "bin_id", out.BinID)
-	defer slog.Info("sse client disconnected", "slug", slug, "bin_id", out.BinID)
+	slog.InfoContext(r.Context(), "sse client connected", "slug", slug, "bin_id", out.BinID)
+	defer slog.InfoContext(r.Context(), "sse client disconnected", "slug", slug, "bin_id", out.BinID)
 
 	defer h.svc.UnsubscribeFromBin(context.Background(), service.UnsubscribeFromBinInput{
 		BinID:   out.BinID,
@@ -61,7 +64,7 @@ func (h *handler) handleSubscribeToBin(w http.ResponseWriter, r *http.Request) {
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		slog.Error("failed to subscribe to bin", "error", "response writer does not support flushing")
+		slog.ErrorContext(r.Context(), "failed to subscribe to bin", "error", "response writer does not support flushing")
 		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
@@ -91,7 +94,7 @@ func (h *handler) handleSubscribeToBin(w http.ResponseWriter, r *http.Request) {
 				CapturedAt:  req.CapturedAt().UTC().Format(time.RFC3339),
 			})
 			if err != nil {
-				slog.Error("failed to marshal sse event", "error", err)
+				slog.ErrorContext(r.Context(), "failed to marshal sse event", "error", err)
 				return
 			}
 
@@ -102,8 +105,15 @@ func (h *handler) handleSubscribeToBin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) handleCaptureRequest(w http.ResponseWriter, r *http.Request) {
+	span := trace.SpanFromContext(r.Context())
+
 	slug := r.PathValue("slug")
 	path := "/" + r.PathValue("path")
+
+	span.SetAttributes(
+		attribute.String("bin.slug", slug),
+		attribute.String("http.path", path),
+	)
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
 
@@ -111,12 +121,20 @@ func (h *handler) handleCaptureRequest(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
+			span.SetAttributes(attribute.Int("outcome", http.StatusRequestEntityTooLarge))
 			writeJSON(w, http.StatusRequestEntityTooLarge, errorResponse{Error: "request body too large"})
 			return
 		}
+		span.SetAttributes(attribute.Int("outcome", http.StatusBadRequest))
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "failed to read request body"})
 		return
 	}
+
+	span.SetAttributes(
+		attribute.Int("headers.count", len(r.Header)),
+		attribute.Int("body.size", len(body)),
+		attribute.String("content_type", r.Header.Get("Content-Type")),
+	)
 
 	out, err := h.svc.CaptureRequest(r.Context(), service.CaptureRequestInput{
 		Slug:        slug,
@@ -131,17 +149,28 @@ func (h *handler) handleCaptureRequest(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrInvalidSlug):
+			span.SetAttributes(attribute.Int("outcome", http.StatusBadRequest))
 			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "invalid slug"})
 		case errors.Is(err, repo.ErrNotFound):
+			span.SetAttributes(attribute.Int("outcome", http.StatusNotFound))
 			writeJSON(w, http.StatusNotFound, errorResponse{Error: "bin not found"})
 		case errors.Is(err, service.ErrBinExpired):
+			span.SetAttributes(attribute.Int("outcome", http.StatusGone))
 			writeJSON(w, http.StatusGone, errorResponse{Error: "bin is expired"})
 		default:
-			slog.Error("failed to capture request", "error", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "capture failed")
+			span.SetAttributes(attribute.Int("outcome", http.StatusInternalServerError))
+			slog.ErrorContext(r.Context(), "failed to capture request", "error", err)
 			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		}
 		return
 	}
+
+	span.SetAttributes(
+		attribute.Int("sequence_num", out.SequenceNum),
+		attribute.Int("outcome", http.StatusCreated),
+	)
 
 	writeJSON(w, http.StatusCreated, captureRequestResponse{
 		ID:          out.ID.String(),
