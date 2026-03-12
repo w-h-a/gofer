@@ -61,6 +61,106 @@ func (s *Service) CreateBin(ctx context.Context, in CreateBinInput) (CreateBinOu
 	}, nil
 }
 
+func (s *Service) ViewBin(ctx context.Context, in ViewBinInput) (ViewBinOutput, error) {
+	ctx, span := s.tracer.Start(ctx, "bin.View")
+	defer span.End()
+
+	slug, err := domain.ParseSlug(in.Slug)
+	if err != nil {
+		span.RecordError(err)
+		return ViewBinOutput{}, fmt.Errorf("failed to parse slug: %w", err)
+	}
+
+	span.SetAttributes(
+		attribute.String("bin.slug", slug.String()),
+	)
+
+	bin, err := s.repo.FindBinBySlug(ctx, slug)
+	if err != nil {
+		span.RecordError(err)
+		if !errors.Is(err, repo.ErrNotFound) {
+			span.SetStatus(codes.Error, err.Error())
+		}
+		return ViewBinOutput{}, fmt.Errorf("failed to find bin: %w", err)
+	}
+
+	if bin.IsExpired(time.Now()) {
+		span.RecordError(ErrBinExpired)
+		return ViewBinOutput{}, ErrBinExpired
+	}
+
+	reqs, err := s.repo.FindCapturedRequestByBinID(ctx, bin.ID())
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return ViewBinOutput{}, fmt.Errorf("failed to find captured requests: %w", err)
+	}
+
+	summaries := make([]CapturedRequestSummary, len(reqs))
+	for i, r := range reqs {
+		summaries[i] = CapturedRequestSummary{
+			ID:          r.ID(),
+			SequenceNum: r.SequenceNum(),
+			Method:      r.Method(),
+			Path:        r.Path(),
+			ContentType: r.ContentType(),
+			BodySize:    r.BodySize(),
+			CapturedAt:  r.CapturedAt(),
+		}
+	}
+
+	span.SetAttributes(
+		attribute.Int("requests.count", len(reqs)),
+	)
+
+	return ViewBinOutput{
+		ID:        bin.ID(),
+		Slug:      bin.Slug().String(),
+		CreatedAt: bin.CreatedAt(),
+		ExpiresAt: bin.ExpiresAt(),
+		Requests:  summaries,
+	}, nil
+}
+
+func (s *Service) ViewCapturedRequest(ctx context.Context, in ViewCapturedRequestInput) (ViewCapturedRequestOutput, error) {
+	ctx, span := s.tracer.Start(ctx, "request.View")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("request.id", in.ID),
+	)
+
+	id, err := domain.ParseID(in.ID)
+	if err != nil {
+		span.RecordError(err)
+		return ViewCapturedRequestOutput{}, fmt.Errorf("failed to parse request id: %w", err)
+	}
+
+	req, err := s.repo.FindCapturedRequestByID(ctx, id)
+	if err != nil {
+		span.RecordError(err)
+		if !errors.Is(err, repo.ErrNotFound) {
+			span.SetStatus(codes.Error, err.Error())
+		}
+		return ViewCapturedRequestOutput{}, fmt.Errorf("failed to find captured request: %w", err)
+	}
+
+	return ViewCapturedRequestOutput{
+		ID:          req.ID(),
+		BinID:       req.BinID(),
+		SequenceNum: req.SequenceNum(),
+		Method:      req.Method(),
+		Path:        req.Path(),
+		Headers:     req.Headers(),
+		QueryParams: req.QueryParams(),
+		ContentType: req.ContentType(),
+		RemoteAddr:  req.RemoteAddr(),
+		BodySize:    req.BodySize(),
+		CapturedAt:  req.CapturedAt(),
+		Body:        req.RawPayload().Bytes(),
+	}, nil
+}
+
 func (s *Service) SubscribeToBin(ctx context.Context, in SubscribeToBinInput) (SubscribeToBinOutput, error) {
 	ctx, span := s.tracer.Start(ctx, "bin.Subscribe")
 	defer span.End()
@@ -192,106 +292,6 @@ func (s *Service) CaptureRequest(ctx context.Context, in CaptureRequestInput) (C
 		ContentType: saved.ContentType(),
 		BodySize:    saved.BodySize(),
 		CapturedAt:  saved.CapturedAt(),
-	}, nil
-}
-
-func (s *Service) ViewBin(ctx context.Context, in ViewBinInput) (ViewBinOutput, error) {
-	ctx, span := s.tracer.Start(ctx, "bin.View")
-	defer span.End()
-
-	slug, err := domain.ParseSlug(in.Slug)
-	if err != nil {
-		span.RecordError(err)
-		return ViewBinOutput{}, fmt.Errorf("failed to parse slug: %w", err)
-	}
-
-	span.SetAttributes(
-		attribute.String("bin.slug", slug.String()),
-	)
-
-	bin, err := s.repo.FindBinBySlug(ctx, slug)
-	if err != nil {
-		span.RecordError(err)
-		if !errors.Is(err, repo.ErrNotFound) {
-			span.SetStatus(codes.Error, err.Error())
-		}
-		return ViewBinOutput{}, fmt.Errorf("failed to find bin: %w", err)
-	}
-
-	if bin.IsExpired(time.Now()) {
-		span.RecordError(ErrBinExpired)
-		return ViewBinOutput{}, ErrBinExpired
-	}
-
-	reqs, err := s.repo.FindCapturedRequestByBinID(ctx, bin.ID())
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return ViewBinOutput{}, fmt.Errorf("failed to find captured requests: %w", err)
-	}
-
-	summaries := make([]CapturedRequestSummary, len(reqs))
-	for i, r := range reqs {
-		summaries[i] = CapturedRequestSummary{
-			ID:          r.ID(),
-			SequenceNum: r.SequenceNum(),
-			Method:      r.Method(),
-			Path:        r.Path(),
-			ContentType: r.ContentType(),
-			BodySize:    r.BodySize(),
-			CapturedAt:  r.CapturedAt(),
-		}
-	}
-
-	span.SetAttributes(
-		attribute.Int("requests.count", len(reqs)),
-	)
-
-	return ViewBinOutput{
-		ID:        bin.ID(),
-		Slug:      bin.Slug().String(),
-		CreatedAt: bin.CreatedAt(),
-		ExpiresAt: bin.ExpiresAt(),
-		Requests:  summaries,
-	}, nil
-}
-
-func (s *Service) ViewCapturedRequest(ctx context.Context, in ViewCapturedRequestInput) (ViewCapturedRequestOutput, error) {
-	ctx, span := s.tracer.Start(ctx, "request.View")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.String("request.id", in.ID),
-	)
-
-	id, err := domain.ParseID(in.ID)
-	if err != nil {
-		span.RecordError(err)
-		return ViewCapturedRequestOutput{}, fmt.Errorf("failed to parse request id: %w", err)
-	}
-
-	req, err := s.repo.FindCapturedRequestByID(ctx, id)
-	if err != nil {
-		span.RecordError(err)
-		if !errors.Is(err, repo.ErrNotFound) {
-			span.SetStatus(codes.Error, err.Error())
-		}
-		return ViewCapturedRequestOutput{}, fmt.Errorf("failed to find captured request: %w", err)
-	}
-
-	return ViewCapturedRequestOutput{
-		ID:          req.ID(),
-		BinID:       req.BinID(),
-		SequenceNum: req.SequenceNum(),
-		Method:      req.Method(),
-		Path:        req.Path(),
-		Headers:     req.Headers(),
-		QueryParams: req.QueryParams(),
-		ContentType: req.ContentType(),
-		RemoteAddr:  req.RemoteAddr(),
-		BodySize:    req.BodySize(),
-		CapturedAt:  req.CapturedAt(),
-		Body:        req.RawPayload().Bytes(),
 	}, nil
 }
 
