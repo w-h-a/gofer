@@ -37,7 +37,7 @@
                 if (!r.ok) throw new Error("failed")
                 const bin = await r.json();
                 const bins = JSON.parse(localStorage.getItem('gofer_bins') || '[]');
-                bins.unshift({ slug: bin.slug, created_at: bin.created_at });
+                bins.unshift({ slug: bin.slug, created_at: bin.created_at, expires_at: bin.expires_at });
                 localStorage.setItem('gofer_bins', JSON.stringify(bins.slice(0, 20)));
                 window.location.href = '/bins/' + bin.slug;
             } catch (e) {
@@ -46,7 +46,10 @@
             }
         });
 
-        const bins = JSON.parse(localStorage.getItem('gofer_bins') || '[]');
+        const now = new Date();
+        const bins = JSON.parse(localStorage.getItem('gofer_bins') || '[]')
+            .filter(b => !b.expires_at || new Date(b.expires_at) > now);
+        localStorage.setItem('gofer_bins', JSON.stringify(bins));
         if (bins.length > 0) {
             list.innerHTML = '';
             bins.forEach(b => {
