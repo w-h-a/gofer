@@ -1,4 +1,4 @@
-name: test
+name: pre-merge
 
 on:
   pull_request:
@@ -17,3 +17,12 @@ jobs:
         with:
           go-version-file: go.mod
       - run: make test
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false

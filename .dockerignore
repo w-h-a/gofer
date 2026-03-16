@@ -1,0 +1,8 @@
+.git
+bin/
+gofer.db*
+deploy/
+.DS_Store
+Dockerfile
+Makefile
+*.md
