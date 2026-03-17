@@ -17,11 +17,13 @@ spec:
     spec:
       containers:
         - name: gofer
-          image: wesha/gofer:latest
+          image: IMAGE_PLACEHOLDER
           ports:
             - name: http
               containerPort: 8080
           env:
+            - name: VERSION
+              value: VERSION_PLACEHOLDER
             - name: REPO_LOCATION
               value: /data/gofer.db
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
