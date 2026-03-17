@@ -1,0 +1,16 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: gofer
+  namespace: gofer
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`gofer.weslab.vip`)
+      kind: Rule
+      services:
+        - name: gofer
+          port: 8080
+  tls:
+    secretName: gofer-tls
