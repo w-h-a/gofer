@@ -3,6 +3,8 @@ kind: IngressRoute
 metadata:
   name: gofer
   namespace: gofer
+  annotations:
+    external-dns.alpha.kubernetes.io/target: lb.weslab.vip
 spec:
   entryPoints:
     - websecure
