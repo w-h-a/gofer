@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -77,7 +78,13 @@ func main() {
 		Addr: addr,
 		Handler: otelhttp.NewHandler(h.routes(), "gofer",
 			otelhttp.WithFilter(func(r *http.Request) bool {
-				return r.URL.Path != "/healthz"
+				if r.URL.Path == "/healthz" {
+					return false
+				}
+				if strings.HasPrefix(r.URL.Path, "/api/bins/") && strings.HasSuffix(r.URL.Path, "/sse") {
+					return false
+				}
+				return true
 			}),
 		),
 	}
