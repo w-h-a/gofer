@@ -121,7 +121,7 @@ func main() {
 }
 
 func runCleanup(ctx context.Context, svc *service.Service) {
-	ticker := time.NewTicker(1 * time.Minute)
+	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
 	for {
