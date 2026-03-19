@@ -83,6 +83,16 @@ func (h *handler) handleSubscribeToBin(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
+			_, span := h.tracer.Start(
+				r.Context(),
+				"sse.event.push",
+				trace.WithAttributes(
+					attribute.String("bin.id", req.BinID().String()),
+					attribute.String("request.id", req.ID().String()),
+					attribute.Int("request.sequence_num", req.SequenceNum()),
+				),
+			)
+
 			data, err := json.Marshal(captureRequestResponse{
 				ID:          req.ID().String(),
 				BinID:       req.BinID().String(),
@@ -94,12 +104,16 @@ func (h *handler) handleSubscribeToBin(w http.ResponseWriter, r *http.Request) {
 				CapturedAt:  req.CapturedAt().UTC().Format(time.RFC3339),
 			})
 			if err != nil {
+				span.RecordError(err)
+				span.SetStatus(codes.Error, "failed to marshal sse event")
+				span.End()
 				slog.ErrorContext(r.Context(), "failed to marshal sse event", "error", err)
 				return
 			}
 
 			fmt.Fprintf(w, "data: %s\n\n", data)
 			flusher.Flush()
+			span.End()
 		}
 	}
 }

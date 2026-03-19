@@ -7,6 +7,8 @@ import (
 
 	"github.com/w-h-a/gofer/cmd/gofer/web"
 	"github.com/w-h-a/gofer/internal/service"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type handler struct {
@@ -14,6 +16,7 @@ type handler struct {
 	tmpl       *template.Template
 	defaultTTL time.Duration
 	version    string
+	tracer     trace.Tracer
 }
 
 func (h *handler) routes() http.Handler {
@@ -31,5 +34,11 @@ func (h *handler) routes() http.Handler {
 
 func newHandler(svc *service.Service, defaultTTL time.Duration, version string) *handler {
 	tmpl := template.Must(template.ParseFS(web.Templates, "templates/*.html"))
-	return &handler{svc: svc, tmpl: tmpl, defaultTTL: defaultTTL, version: version}
+	return &handler{
+		svc:        svc,
+		tmpl:       tmpl,
+		defaultTTL: defaultTTL,
+		version:    version,
+		tracer:     otel.Tracer("github.com/w-h-a/gofer/cmd/gofer"),
+	}
 }
