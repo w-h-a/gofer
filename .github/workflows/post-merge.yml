@@ -10,6 +10,9 @@ concurrency:
 
 env:
   DOCKER_REPO_PATH: ${{ secrets.DOCKER_USERNAME }}/gofer
+  OTEL_EXPORTER_OTLP_ENDPOINT: "https://api.honeycomb.io"
+  OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
+  OTEL_SERVICE_NAME: "cd"
 
 jobs:
   semver_tag:
@@ -43,30 +46,63 @@ jobs:
     if: needs.semver_tag.outputs.is_released == 'true'
     outputs:
       image_tag: ${{ needs.semver_tag.outputs.new_tag }}
+    env:
+      OTEL_EXPORTER_OTLP_HEADERS: "x-honeycomb-team=${{ secrets.HONEYCOMB_API_KEY }}"
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/login-action@v3
+      - name: Install otel-cli
+        run: |
+          curl -sL https://github.com/equinix-labs/otel-cli/releases/download/v0.4.5/otel-cli_0.4.5_linux_amd64.deb -o otel-cli.deb
+          sudo dpkg -i otel-cli.deb
+          TRACE_ID=$(echo -n "$GITHUB_RUN_ID" | md5sum | cut -c1-32)
+          echo "TRACE_ID=$TRACE_ID" >> "$GITHUB_ENV"
+
+      - name: Docker login
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ env.DOCKER_REPO_PATH }}:${{ needs.semver_tag.outputs.new_tag }}
-            ${{ env.DOCKER_REPO_PATH }}:latest
+      - name: Docker build
+        run: |
+          otel-cli exec \
+            --name docker-build \
+            --force-trace-id $TRACE_ID \
+            --attrs "service=gofer,github.repository=$GITHUB_REPOSITORY,github.run_id=$GITHUB_RUN_ID,github.sha=$GITHUB_SHA,job=build_push,image_tag=${{ needs.semver_tag.outputs.new_tag }}" \
+            -- docker buildx build \
+              --tag ${{ env.DOCKER_REPO_PATH }}:${{ needs.semver_tag.outputs.new_tag }} \
+              --tag ${{ env.DOCKER_REPO_PATH }}:latest \
+              .
+
+      - name: Docker push
+        run: |
+          otel-cli exec \
+            --name docker-push \
+            --force-trace-id $TRACE_ID \
+            --attrs "service=gofer,github.repository=$GITHUB_REPOSITORY,github.run_id=$GITHUB_RUN_ID,github.sha=$GITHUB_SHA,job=build_push,image_tag=${{ needs.semver_tag.outputs.new_tag }}" \
+            -- bash -c '
+            docker push ${{ env.DOCKER_REPO_PATH }}:${{ needs.semver_tag.outputs.new_tag }} &&
+            docker push ${{ env.DOCKER_REPO_PATH }}:latest
+          '
 
   deploy:
     runs-on: ubuntu-latest
     needs: [semver_tag, build_push]
+    env:
+      OTEL_EXPORTER_OTLP_HEADERS: "x-honeycomb-team=${{ secrets.HONEYCOMB_API_KEY }}"
     steps:
       - uses: actions/checkout@v4
 
-      - uses: digitalocean/action-doctl@v2                                                                                                                           
-        with:                                                                                                                                                        
+      - name: Install otel-cli
+        run: |
+          curl -sL https://github.com/equinix-labs/otel-cli/releases/download/v0.4.5/otel-cli_0.4.5_linux_amd64.deb -o otel-cli.deb
+          sudo dpkg -i otel-cli.deb
+          TRACE_ID=$(echo -n "$GITHUB_RUN_ID" | md5sum | cut -c1-32)
+          echo "TRACE_ID=$TRACE_ID" >> "$GITHUB_ENV"
+
+      - uses: digitalocean/action-doctl@v2
+        with:
           token: ${{ secrets.DO_TOKEN }}
 
       - name: Configure kubectl
@@ -80,7 +116,17 @@ jobs:
           sed -i "s|VERSION_PLACEHOLDER|${IMAGE_TAG}|" deploy/k8s/deployment.yaml
 
       - name: Apply manifests
-        run: kubectl apply -f deploy/k8s/
+        run: |
+          otel-cli exec \
+            --name kubectl-apply \
+            --force-trace-id $TRACE_ID \
+            --attrs "service=gofer,github.repository=$GITHUB_REPOSITORY,github.run_id=$GITHUB_RUN_ID,github.sha=$GITHUB_SHA,job=deploy,image_tag=${{ needs.build_push.outputs.image_tag }}" \
+            -- kubectl apply -f deploy/k8s/
 
       - name: Verify rollout
-        run: kubectl rollout status deployment/gofer -n gofer --timeout=120s
+        run: |
+          otel-cli exec \
+            --name kubectl-rollout \
+            --force-trace-id $TRACE_ID \
+            --attrs "service=gofer,github.repository=$GITHUB_REPOSITORY,github.run_id=$GITHUB_RUN_ID,github.sha=$GITHUB_SHA,job=deploy,image_tag=${{ needs.build_push.outputs.image_tag }}" \
+            -- kubectl rollout status deployment/gofer -n gofer --timeout=120s
