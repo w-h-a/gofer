@@ -6,7 +6,7 @@
 
 ## Problem
 
-When integrating with third-party services that send HTTP requests to your endpoints (Stripe payment events, GitHub pushes, etc), it's not always clear what the shape of the request will be. OTel solves this for systems you control---instrument your HTTP client and you see outbound request details in traces. But you cannot add OTel to Stripe's HTTP client.
+When integrating with third-party services that send HTTP requests to your endpoints (Stripe payment events, GitHub pushes, etc), it's not always clear what the shape of the request will be. OTel solves this for systems you control: Instrument your HTTP client and you see outbound request details in traces. But you cannot add OTel to Stripe's HTTP client.
 
 ## Solution
 
