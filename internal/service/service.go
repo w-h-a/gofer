@@ -77,15 +77,14 @@ func (s *Service) ViewBin(ctx context.Context, in ViewBinInput) (ViewBinOutput, 
 
 	bin, err := s.repo.FindBinBySlug(ctx, slug)
 	if err != nil {
-		span.RecordError(err)
 		if !errors.Is(err, repo.ErrNotFound) {
+			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 		}
 		return ViewBinOutput{}, fmt.Errorf("failed to find bin: %w", err)
 	}
 
 	if bin.IsExpired(time.Now()) {
-		span.RecordError(ErrBinExpired)
 		return ViewBinOutput{}, ErrBinExpired
 	}
 
@@ -138,8 +137,8 @@ func (s *Service) ViewCapturedRequest(ctx context.Context, in ViewCapturedReques
 
 	req, err := s.repo.FindCapturedRequestByID(ctx, id)
 	if err != nil {
-		span.RecordError(err)
 		if !errors.Is(err, repo.ErrNotFound) {
+			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 		}
 		return ViewCapturedRequestOutput{}, fmt.Errorf("failed to find captured request: %w", err)
@@ -177,15 +176,14 @@ func (s *Service) SubscribeToBin(ctx context.Context, in SubscribeToBinInput) (S
 
 	bin, err := s.repo.FindBinBySlug(ctx, slug)
 	if err != nil {
-		span.RecordError(err)
 		if !errors.Is(err, repo.ErrNotFound) {
+			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 		}
 		return SubscribeToBinOutput{}, fmt.Errorf("failed to find bin: %w", err)
 	}
 
 	if bin.IsExpired(time.Now()) {
-		span.RecordError(ErrBinExpired)
 		return SubscribeToBinOutput{}, ErrBinExpired
 	}
 
@@ -239,15 +237,14 @@ func (s *Service) CaptureRequest(ctx context.Context, in CaptureRequestInput) (C
 
 	bin, err := s.repo.FindBinBySlug(ctx, slug)
 	if err != nil {
-		span.RecordError(err)
 		if !errors.Is(err, repo.ErrNotFound) {
+			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 		}
 		return CaptureRequestOutput{}, fmt.Errorf("failed to find bin: %w", err)
 	}
 
 	if bin.IsExpired(time.Now()) {
-		span.RecordError(ErrBinExpired)
 		return CaptureRequestOutput{}, ErrBinExpired
 	}
 
